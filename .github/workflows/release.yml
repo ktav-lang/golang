@@ -1,0 +1,141 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # ------------------------------------------------------------------
+  # Cross-compile the cdylib for six platforms. Each job uploads a
+  # single asset named the way `internal/native.assetName` expects.
+  # ------------------------------------------------------------------
+  build:
+    name: ${{ matrix.settings.asset }}
+    runs-on: ${{ matrix.settings.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        settings:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            asset: libktav_cabi-linux-amd64.so
+            artifact: libktav_cabi.so
+            use-zigbuild: true
+
+          - os: ubuntu-latest
+            target: aarch64-unknown-linux-gnu
+            asset: libktav_cabi-linux-arm64.so
+            artifact: libktav_cabi.so
+            use-zigbuild: true
+
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            asset: libktav_cabi-darwin-amd64.dylib
+            artifact: libktav_cabi.dylib
+            use-zigbuild: false
+
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            asset: libktav_cabi-darwin-arm64.dylib
+            artifact: libktav_cabi.dylib
+            use-zigbuild: false
+
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            asset: ktav_cabi-windows-amd64.dll
+            artifact: ktav_cabi.dll
+            use-zigbuild: false
+
+          - os: windows-latest
+            target: aarch64-pc-windows-msvc
+            asset: ktav_cabi-windows-arm64.dll
+            artifact: ktav_cabi.dll
+            use-zigbuild: false
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.settings.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.settings.target }}
+
+      # zig + cargo-zigbuild for Linux targets — lets us pin the
+      # minimum glibc (see `--target` below) and cross-compile arm64
+      # from x64 without apt-installing a separate gcc.
+      - name: Install zig
+        if: matrix.settings.use-zigbuild
+        uses: mlugg/setup-zig@v2
+        with:
+          version: 0.14.0
+      - name: Install cargo-zigbuild
+        if: matrix.settings.use-zigbuild
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-zigbuild
+
+      - name: Build (zigbuild)
+        if: matrix.settings.use-zigbuild
+        run: cargo zigbuild --release -p ktav-cabi --target ${{ matrix.settings.target }}.2.17
+
+      - name: Build (native)
+        if: ${{ !matrix.settings.use-zigbuild }}
+        run: cargo build --release -p ktav-cabi --target ${{ matrix.settings.target }}
+
+      - name: Rename artifact (Unix)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          src="target/${{ matrix.settings.target }}/release/${{ matrix.settings.artifact }}"
+          ls -la "$src"
+          cp "$src" "${{ matrix.settings.asset }}"
+      - name: Rename artifact (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          src="target/${{ matrix.settings.target }}/release/${{ matrix.settings.artifact }}"
+          ls -la "$src"
+          cp "$src" "${{ matrix.settings.asset }}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.settings.asset }}
+          path: ${{ matrix.settings.asset }}
+          if-no-files-found: error
+
+  # ------------------------------------------------------------------
+  # Attach the six artifacts to the GitHub Release matching the tag.
+  # ------------------------------------------------------------------
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: List artifacts
+        run: ls -la artifacts/
+
+      - name: Create / update GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/*
+          fail_on_unmatched_files: true
+          generate_release_notes: true

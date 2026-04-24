@@ -1,0 +1,87 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # ------------------------------------------------------------------
+  # Build native library + run Rust lints + Go tests, all in one job
+  # per OS. Keeps the cache hot: the same cargo build produces the
+  # cdylib the Go tests point at via $KTAV_LIB_PATH.
+  # ------------------------------------------------------------------
+  test:
+    name: ${{ matrix.os }} / Go ${{ matrix.go }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        go: ["1.21", "1.22", "1.23"]
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ matrix.go }}
+
+      - name: Build native library
+        run: cargo build --release -p ktav-cabi
+
+      - name: Export KTAV_LIB_PATH (Linux)
+        if: runner.os == 'Linux'
+        run: echo "KTAV_LIB_PATH=${{ github.workspace }}/target/release/libktav_cabi.so" >> $GITHUB_ENV
+      - name: Export KTAV_LIB_PATH (macOS)
+        if: runner.os == 'macOS'
+        run: echo "KTAV_LIB_PATH=${{ github.workspace }}/target/release/libktav_cabi.dylib" >> $GITHUB_ENV
+      - name: Export KTAV_LIB_PATH (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: echo "KTAV_LIB_PATH=${{ github.workspace }}/target/release/ktav_cabi.dll" >> $GITHUB_ENV
+
+      - name: Go tests
+        env:
+          KTAV_SPEC_ROOT: ${{ github.workspace }}/spec/versions/0.1/tests
+        run: go test -v ./...
+
+  lint-rust:
+    name: rust clippy + fmt
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo fmt --all --check
+      - run: cargo clippy --release -p ktav-cabi -- -D warnings
+
+  lint-go:
+    name: go vet
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.23"
+      # unsafeptr=false: we legitimately convert C-owned pointers from
+      # purego.SyscallN out-params to Go slices. The memory is Rust-
+      # managed and not GC-tracked, so the analyzer's warning is a
+      # false positive.
+      - run: go vet -unsafeptr=false ./...
+      - run: test -z "$(gofmt -l .)"

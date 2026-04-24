@@ -1,0 +1,22 @@
+[package]
+name = "ktav-cabi"
+description = "C ABI bindings for the Ktav configuration format, consumed by the Go package via purego"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+publish = false
+
+[package.metadata.ktav]
+spec-version = "0.1.0"
+
+[lib]
+name = "ktav_cabi"
+crate-type = ["cdylib"]
+
+[dependencies]
+ktav = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+indexmap = { workspace = true }

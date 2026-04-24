@@ -1,0 +1,14 @@
+/target
+/dist
+/docs_local
+
+# IDEs / editors
+/.idea
+/.vscode
+*.swp
+*.swo
+
+# Go build artefacts
+*.test
+*.out
+coverage.*
