@@ -13,6 +13,8 @@ go get github.com/ktav-lang/golang
 
 ## Быстрый старт
 
+### Парсинг — декод сразу в типизированную структуру
+
 ```go
 package main
 
@@ -22,8 +24,7 @@ import (
     ktav "github.com/ktav-lang/golang"
 )
 
-func main() {
-    src := `
+const src = `
 service: web
 port:i 8080
 ratio:f 0.75
@@ -35,17 +36,7 @@ tags: [
 db.host: primary.internal
 db.timeout:i 30
 `
-    cfg, err := ktav.Loads(src)
-    if err != nil {
-        panic(err)
-    }
-    fmt.Printf("%#v\n", cfg)
-}
-```
 
-Декодирование в структуру:
-
-```go
 type Config struct {
     Service string   `json:"service"`
     Port    int64    `json:"port"`
@@ -58,11 +49,52 @@ type Config struct {
     } `json:"db"`
 }
 
-var cfg Config
-if err := ktav.LoadsInto(src, &cfg); err != nil {
-    // ...
+func main() {
+    var cfg Config
+    if err := ktav.LoadsInto(src, &cfg); err != nil {
+        panic(err)
+    }
+    fmt.Printf("port=%d host=%s timeout=%ds\n",
+        cfg.Port, cfg.DB.Host, cfg.DB.Timeout)
 }
 ```
+
+### Обход — динамическая форма с диспатчем по типу
+
+```go
+dyn, _ := ktav.Loads(src)
+for k, v := range dyn.(map[string]any) {
+    switch x := v.(type) {
+    case bool:           fmt.Printf("%s is bool=%v\n", k, x)
+    case int64:          fmt.Printf("%s is int=%d\n", k, x)
+    case float64:        fmt.Printf("%s is float=%g\n", k, x)
+    case string:         fmt.Printf("%s is str=%q\n", k, x)
+    case []any:          fmt.Printf("%s is array(%d)\n", k, len(x))
+    case map[string]any: fmt.Printf("%s is object(%d)\n", k, len(x))
+    case nil:            fmt.Printf("%s is null\n", k)
+    }
+}
+```
+
+### Билд + рендер — собираем документ в коде
+
+```go
+doc := map[string]any{
+    "name":  "frontend",
+    "port":  int64(8443),
+    "tls":   true,
+    "ratio": 0.95,
+    "upstreams": []any{
+        map[string]any{"host": "a.example", "port": int64(1080)},
+        map[string]any{"host": "b.example", "port": int64(1080)},
+    },
+    "notes": nil,
+}
+out, _ := ktav.Dumps(doc)
+fmt.Print(out)
+```
+
+Полный запускаемый пример — в [`examples/basic`](examples/basic/main.go).
 
 ## API
 
