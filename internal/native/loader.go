@@ -24,7 +24,7 @@ import (
 
 // LibVersion is the version of the companion `ktav_cabi` shared library
 // this Go module expects. It is in lockstep with the Go module tag.
-const LibVersion = "0.1.0"
+const LibVersion = "0.1.1"
 
 // releaseAssetBase is the GitHub Release where prebuilt binaries live.
 // Tagged `v<LibVersion>`; per-platform asset naming is handled below.

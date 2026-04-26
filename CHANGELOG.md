@@ -11,6 +11,16 @@ This changelog tracks **binding releases**, not changes to the Ktav format
 itself — for the latter see
 [`ktav-lang/spec`](https://github.com/ktav-lang/spec/blob/main/CHANGELOG.md).
 
+## 0.1.1 — 2026-04-26
+
+### Changed
+
+- **Picked up `ktav 0.1.4`** — the upstream Rust crate's untyped
+  `parse() → Value` path (which `cabi` uses) is now ~30% faster on
+  small documents and ~13% faster on large ones, just from a one-
+  line `Frame::Object` capacity tweak (4 → 8). Every `ktav.Loads`
+  call benefits transparently.
+
 ## 0.1.0 — first public release
 
 First release. Targets **Ktav format 0.1**.
