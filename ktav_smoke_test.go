@@ -1,7 +1,9 @@
 package ktav_test
 
 import (
+	"errors"
 	"math/big"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -79,6 +81,19 @@ func TestSmokeRoundTrip(t *testing.T) {
 	if b["name"] != "demo" || b["count"] != int64(42) || b["ratio"] != 0.5 || b["flag"] != true {
 		t.Fatalf("round-trip mismatch: %#v\n---\n%s", b, out)
 	}
+	if b["nothing"] != nil {
+		t.Fatalf("nothing = %#v", b["nothing"])
+	}
+	if !reflect.DeepEqual(b["tags"], []any{"a", "b"}) {
+		t.Fatalf("tags = %#v", b["tags"])
+	}
+	nested, ok := b["nested"].(map[string]any)
+	if !ok {
+		t.Fatalf("nested is %T", b["nested"])
+	}
+	if nested["inner"] != int64(1) {
+		t.Fatalf("nested.inner = %v (%T)", nested["inner"], nested["inner"])
+	}
 }
 
 func TestSmokeBigInt(t *testing.T) {
@@ -113,9 +128,31 @@ func TestSmokeErrorPath(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error on unterminated array")
 	}
-	if _, ok := err.(*ktav.Error); !ok {
+	var ktavErr *ktav.Error
+	if !errors.As(err, &ktavErr) {
 		t.Fatalf("not *ktav.Error: %T", err)
 	}
+}
+
+func TestDumpsNaNRejected(t *testing.T) {
+	requireCabi(t)
+	// NaN is rejected on the Go side (before hitting Rust) — the
+	// resulting error should still be *ktav.Error so callers can match
+	// every binding-emitted failure with one errors.As.
+	doc := map[string]any{"x": floatNaN()}
+	_, err := ktav.Dumps(doc)
+	if err == nil {
+		t.Fatal("expected error for NaN")
+	}
+	var ktavErr *ktav.Error
+	if !errors.As(err, &ktavErr) {
+		t.Fatalf("Go-side error not *ktav.Error: %T (%v)", err, err)
+	}
+}
+
+func floatNaN() float64 {
+	zero := 0.0
+	return zero / zero
 }
 
 func TestDumpsRejectsNonObject(t *testing.T) {

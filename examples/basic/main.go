@@ -11,6 +11,7 @@ package main
 
 import (
 	"fmt"
+	"sort"
 
 	ktav "github.com/ktav-lang/golang"
 )
@@ -59,8 +60,14 @@ func main() {
 		panic(err)
 	}
 	fmt.Println("shape:")
-	for k, v := range dyn.(map[string]any) {
-		fmt.Printf("  %-12s -> %s\n", k, describe(v))
+	dynMap := dyn.(map[string]any)
+	keys := make([]string, 0, len(dynMap))
+	for k := range dynMap {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		fmt.Printf("  %-12s -> %s\n", k, describe(dynMap[k]))
 	}
 
 	// ── 3. Build a config in code, render it as Ktav text. ───────────

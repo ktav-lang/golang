@@ -18,7 +18,12 @@
 //	:f <number>       float64
 //	bare scalar       string
 //	[ ... ]           []any
-//	{ ... }           map[string]any (insertion-ordered via orderedmap)
+//	{ ... }           map[string]any (key order not preserved)
+//
+// Key order from the source is **not** preserved on either side: decode
+// returns a plain `map[string]any`, and encode goes through
+// `encoding/json`, which emits object keys in alphabetical order. If
+// you need a fixed shape, use `LoadsInto` into a struct.
 //
 // On encode, Go *big.Int always emits `:i`; Go int / int64 / uint64
 // emit `:i`; Go float64 emits `:f`; Go string emits a bare scalar.
@@ -28,7 +33,6 @@ package ktav
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"math/big"
 	"runtime"
@@ -40,10 +44,19 @@ import (
 	"github.com/ktav-lang/golang/internal/native"
 )
 
-// Error is the Go-side counterpart of a Ktav parse/render error.
+// Error is the binding's error type. Returned from every Loads / Dumps
+// failure — both Rust-side parse/render errors and Go-side decode bugs
+// (malformed tagged JSON, bad integer literal, etc.) — so callers can
+// match all ktav failures with one `errors.As`.
 type Error struct{ Msg string }
 
 func (e *Error) Error() string { return e.Msg }
+
+func newError(msg string) *Error { return &Error{Msg: msg} }
+
+func newErrorf(format string, args ...any) *Error {
+	return &Error{Msg: fmt.Sprintf(format, args...)}
+}
 
 // Loads parses a Ktav document and returns its Go representation (see
 // package doc for the mapping).
@@ -196,13 +209,13 @@ func copyFromC(ptr, n uintptr) []byte {
 // Go values. Object key order is preserved via orderedMap.
 func decodeJSON(raw []byte) (any, error) {
 	if len(raw) == 0 {
-		return nil, errors.New("ktav: empty decode input")
+		return nil, newError("ktav: empty decode input")
 	}
 	dec := json.NewDecoder(bytesReader(raw))
 	dec.UseNumber()
 	tok, err := dec.Token()
 	if err != nil {
-		return nil, err
+		return nil, newErrorf("decode: %s", err)
 	}
 	return decodeValue(dec, tok)
 }
@@ -216,7 +229,7 @@ func decodeValue(dec *json.Decoder, tok json.Token) (any, error) {
 		case '[':
 			return decodeArray(dec)
 		default:
-			return nil, fmt.Errorf("unexpected delim %q", t)
+			return nil, newErrorf("unexpected delim %q", t)
 		}
 	case bool:
 		return t, nil
@@ -224,13 +237,17 @@ func decodeValue(dec *json.Decoder, tok json.Token) (any, error) {
 		if i, err := t.Int64(); err == nil {
 			return i, nil
 		}
-		return t.Float64()
+		f, err := t.Float64()
+		if err != nil {
+			return nil, newErrorf("bad number literal: %q", string(t))
+		}
+		return f, nil
 	case string:
 		return t, nil
 	case nil:
 		return nil, nil
 	default:
-		return nil, fmt.Errorf("unexpected token %T", tok)
+		return nil, newErrorf("unexpected token %T", tok)
 	}
 }
 
@@ -239,7 +256,7 @@ func decodeArray(dec *json.Decoder) ([]any, error) {
 	for dec.More() {
 		tok, err := dec.Token()
 		if err != nil {
-			return nil, err
+			return nil, newErrorf("decode: %s", err)
 		}
 		v, err := decodeValue(dec, tok)
 		if err != nil {
@@ -248,17 +265,59 @@ func decodeArray(dec *json.Decoder) ([]any, error) {
 		out = append(out, v)
 	}
 	if _, err := dec.Token(); err != nil { // consume ']'
-		return nil, err
+		return nil, newErrorf("decode: %s", err)
 	}
 	return out, nil
 }
 
 func decodeObject(dec *json.Decoder) (any, error) {
-	type kv struct {
-		k string
-		v any
+	// Read the first key/value if any. The tagged-scalar shapes
+	// (`{"$i": "..."}`, `{"$f": "..."}`) are single-entry objects with a
+	// string payload — peek the first entry, special-case it, and only
+	// allocate a map for the general case.
+	if !dec.More() {
+		if _, err := dec.Token(); err != nil { // consume '}'
+			return nil, err
+		}
+		return map[string]any{}, nil
 	}
-	var entries []kv
+
+	firstKeyTok, err := dec.Token()
+	if err != nil {
+		return nil, err
+	}
+	firstKey, ok := firstKeyTok.(string)
+	if !ok {
+		return nil, newErrorf("non-string object key: %v", firstKeyTok)
+	}
+	firstValTok, err := dec.Token()
+	if err != nil {
+		return nil, err
+	}
+	firstVal, err := decodeValue(dec, firstValTok)
+	if err != nil {
+		return nil, err
+	}
+
+	if !dec.More() {
+		if _, err := dec.Token(); err != nil { // consume '}'
+			return nil, err
+		}
+		if firstKey == "$i" || firstKey == "$f" {
+			s, ok := firstVal.(string)
+			if !ok {
+				return nil, newErrorf("%s payload must be a string", firstKey)
+			}
+			if firstKey == "$i" {
+				return parseIntegerScalar(s)
+			}
+			return parseFloatScalar(s)
+		}
+		return map[string]any{firstKey: firstVal}, nil
+	}
+
+	out := make(map[string]any)
+	out[firstKey] = firstVal
 	for dec.More() {
 		ktok, err := dec.Token()
 		if err != nil {
@@ -266,7 +325,7 @@ func decodeObject(dec *json.Decoder) (any, error) {
 		}
 		key, ok := ktok.(string)
 		if !ok {
-			return nil, fmt.Errorf("non-string object key: %v", ktok)
+			return nil, newErrorf("non-string object key: %v", ktok)
 		}
 		vtok, err := dec.Token()
 		if err != nil {
@@ -276,40 +335,12 @@ func decodeObject(dec *json.Decoder) (any, error) {
 		if err != nil {
 			return nil, err
 		}
-		entries = append(entries, kv{key, v})
+		out[key] = v
 	}
 	if _, err := dec.Token(); err != nil { // consume '}'
 		return nil, err
 	}
-
-	// Detect the tagged wrappers: a single entry with key "$i" or "$f"
-	// and a string payload.
-	if len(entries) == 1 {
-		e := entries[0]
-		if e.k == "$i" || e.k == "$f" {
-			if s, ok := e.v.(string); ok {
-				if e.k == "$i" {
-					return parseIntegerScalar(s)
-				}
-				f, err := parseFloatScalar(s)
-				if err != nil {
-					return nil, err
-				}
-				return f, nil
-			}
-			return nil, fmt.Errorf("%s payload must be a string", e.k)
-		}
-	}
-
-	m := orderedMap{
-		keys: make([]string, 0, len(entries)),
-		data: make(map[string]any, len(entries)),
-	}
-	for _, e := range entries {
-		m.keys = append(m.keys, e.k)
-		m.data[e.k] = e.v
-	}
-	return m.asMap(), nil
+	return out, nil
 }
 
 // ─── tagged → untagged flattening (for LoadsInto) ─────────────────────
@@ -345,10 +376,11 @@ func flattenAny(v any) any {
 		}
 		return out
 	case []any:
+		out := make([]any, len(t))
 		for i, x := range t {
-			t[i] = flattenAny(x)
+			out[i] = flattenAny(x)
 		}
-		return t
+		return out
 	default:
 		return v
 	}
@@ -406,7 +438,7 @@ func toTagged(v any) (any, error) {
 	case json.Number:
 		s := string(t)
 		if s == "" {
-			return nil, errors.New("empty json.Number")
+			return nil, newError("empty json.Number")
 		}
 		if isIntegerLiteral(s) {
 			return taggedI(s), nil
@@ -459,7 +491,7 @@ func taggedF(text string) map[string]any {
 
 func floatTag(f float64) (any, error) {
 	if isNaN(f) || isInf(f) {
-		return nil, errors.New("ktav: NaN / Inf are not representable")
+		return nil, newError("ktav: NaN / Inf are not representable")
 	}
 	s := formatFloat(f)
 	return taggedF(s), nil
@@ -469,7 +501,7 @@ func floatTag(f float64) (any, error) {
 
 func parseIntegerScalar(s string) (any, error) {
 	if s == "" {
-		return nil, errors.New("empty :i scalar")
+		return nil, newError("empty :i scalar")
 	}
 	// Try to fit into int64 first; otherwise return *big.Int so the
 	// caller never silently loses precision.
@@ -478,7 +510,7 @@ func parseIntegerScalar(s string) (any, error) {
 	}
 	bi := new(big.Int)
 	if _, ok := bi.SetString(s, 10); !ok {
-		return nil, fmt.Errorf("bad integer literal: %q", s)
+		return nil, newErrorf("bad integer literal: %q", s)
 	}
 	return bi, nil
 }
@@ -486,7 +518,7 @@ func parseIntegerScalar(s string) (any, error) {
 func parseFloatScalar(s string) (float64, error) {
 	f, err := strconv.ParseFloat(s, 64)
 	if err != nil {
-		return 0, fmt.Errorf("bad float literal: %q", s)
+		return 0, newErrorf("bad float literal: %q", s)
 	}
 	return f, nil
 }

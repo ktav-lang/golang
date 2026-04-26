@@ -175,20 +175,40 @@ func download(url, dst string) error {
 		return fmt.Errorf("HTTP %s", resp.Status)
 	}
 
-	tmp := dst + ".tmp"
-	f, err := os.Create(tmp)
+	// Unique tmp name so concurrent downloaders (parallel `go test ./...`,
+	// CI matrix on the same FS) don't clobber each other's bytes mid-write
+	// and leave a corrupted dst after rename.
+	dir := filepath.Dir(dst)
+	base := filepath.Base(dst)
+	f, err := os.CreateTemp(dir, base+".*.tmp")
 	if err != nil {
 		return err
 	}
-	_, err = io.Copy(f, resp.Body)
-	closeErr := f.Close()
-	if err != nil {
-		_ = os.Remove(tmp)
+	tmp := f.Name()
+	cleanup := func() { _ = os.Remove(tmp) }
+
+	if _, err := io.Copy(f, resp.Body); err != nil {
+		_ = f.Close()
+		cleanup()
 		return err
 	}
-	if closeErr != nil {
-		_ = os.Remove(tmp)
-		return closeErr
+	if err := f.Sync(); err != nil {
+		_ = f.Close()
+		cleanup()
+		return err
 	}
-	return os.Rename(tmp, dst)
+	if err := f.Close(); err != nil {
+		cleanup()
+		return err
+	}
+	if err := os.Rename(tmp, dst); err != nil {
+		// Lost a race against another writer that already produced `dst`
+		// — that's fine, the binary is content-identical.
+		cleanup()
+		if _, statErr := os.Stat(dst); statErr == nil {
+			return nil
+		}
+		return err
+	}
+	return nil
 }

@@ -25,19 +25,3 @@ func formatFloat(f float64) string {
 	}
 	return s + ".0"
 }
-
-// orderedMap is a small helper used during decoding; the final result
-// is surfaced as a plain map[string]any (insertion order preserved by
-// the key slice). Consumers that need order should use LoadsInto into
-// a struct, or post-process.
-type orderedMap struct {
-	keys []string
-	data map[string]any
-}
-
-func (m orderedMap) asMap() map[string]any {
-	if m.data == nil {
-		return map[string]any{}
-	}
-	return m.data
-}
