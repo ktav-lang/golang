@@ -2,7 +2,6 @@ package ktav_test
 
 import (
 	"math/big"
-	"os"
 	"strings"
 	"testing"
 
@@ -10,9 +9,7 @@ import (
 )
 
 func TestSmokeLoads(t *testing.T) {
-	if os.Getenv("KTAV_LIB_PATH") == "" {
-		t.Skip("KTAV_LIB_PATH not set")
-	}
+	requireCabi(t)
 	src := `service: web
 port:i 8080
 ratio:f 0.75
@@ -32,7 +29,7 @@ db.timeout:i 30
 	if !ok {
 		t.Fatalf("top is %T", got)
 	}
-	if m["service"] != "service-WRONG" && m["service"] != "web" {
+	if m["service"] != "web" {
 		t.Fatalf("service: %v", m["service"])
 	}
 	if m["port"] != int64(8080) {
@@ -57,9 +54,7 @@ db.timeout:i 30
 }
 
 func TestSmokeRoundTrip(t *testing.T) {
-	if os.Getenv("KTAV_LIB_PATH") == "" {
-		t.Skip("KTAV_LIB_PATH not set")
-	}
+	requireCabi(t)
 	input := map[string]any{
 		"name":    "demo",
 		"count":   int64(42),
@@ -87,9 +82,7 @@ func TestSmokeRoundTrip(t *testing.T) {
 }
 
 func TestSmokeBigInt(t *testing.T) {
-	if os.Getenv("KTAV_LIB_PATH") == "" {
-		t.Skip("KTAV_LIB_PATH not set")
-	}
+	requireCabi(t)
 	src := `value:i 99999999999999999999`
 	got, err := ktav.Loads(src)
 	if err != nil {
@@ -115,9 +108,7 @@ func TestSmokeBigInt(t *testing.T) {
 }
 
 func TestSmokeErrorPath(t *testing.T) {
-	if os.Getenv("KTAV_LIB_PATH") == "" {
-		t.Skip("KTAV_LIB_PATH not set")
-	}
+	requireCabi(t)
 	_, err := ktav.Loads("a: [")
 	if err == nil {
 		t.Fatal("expected error on unterminated array")
@@ -128,9 +119,7 @@ func TestSmokeErrorPath(t *testing.T) {
 }
 
 func TestDumpsRejectsNonObject(t *testing.T) {
-	if os.Getenv("KTAV_LIB_PATH") == "" {
-		t.Skip("KTAV_LIB_PATH not set")
-	}
+	requireCabi(t)
 	_, err := ktav.Dumps([]any{1, 2, 3})
 	if err == nil {
 		t.Fatal("expected error for top-level array")

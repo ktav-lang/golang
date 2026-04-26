@@ -15,9 +15,9 @@ env:
 
 jobs:
   # ------------------------------------------------------------------
-  # Build native library + run Rust lints + Go tests, all in one job
-  # per OS. Keeps the cache hot: the same cargo build produces the
-  # cdylib the Go tests point at via $KTAV_LIB_PATH.
+  # Build native library + run Go tests in one job per OS. The test
+  # suite hardcodes both paths (cabi at `target/release/...`, spec at
+  # `spec/versions/0.1/tests`) — no env wiring needed.
   # ------------------------------------------------------------------
   test:
     name: ${{ matrix.os }} / Go ${{ matrix.go }}
@@ -43,20 +43,7 @@ jobs:
       - name: Build native library
         run: cargo build --release -p ktav-cabi
 
-      - name: Export KTAV_LIB_PATH (Linux)
-        if: runner.os == 'Linux'
-        run: echo "KTAV_LIB_PATH=${{ github.workspace }}/target/release/libktav_cabi.so" >> $GITHUB_ENV
-      - name: Export KTAV_LIB_PATH (macOS)
-        if: runner.os == 'macOS'
-        run: echo "KTAV_LIB_PATH=${{ github.workspace }}/target/release/libktav_cabi.dylib" >> $GITHUB_ENV
-      - name: Export KTAV_LIB_PATH (Windows)
-        if: runner.os == 'Windows'
-        shell: bash
-        run: echo "KTAV_LIB_PATH=${{ github.workspace }}/target/release/ktav_cabi.dll" >> $GITHUB_ENV
-
       - name: Go tests
-        env:
-          KTAV_SPEC_ROOT: ${{ github.workspace }}/spec/versions/0.1/tests
         run: go test -v ./...
 
   lint-rust:

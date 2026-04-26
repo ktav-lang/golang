@@ -2,7 +2,6 @@ package ktav_test
 
 import (
 	"encoding/json"
-	"fmt"
 	"math/big"
 	"os"
 	"path/filepath"
@@ -14,16 +13,8 @@ import (
 )
 
 func TestConformanceValid(t *testing.T) {
-	if os.Getenv("KTAV_LIB_PATH") == "" {
-		t.Skip("KTAV_LIB_PATH not set")
-	}
-	specRoot := os.Getenv("KTAV_SPEC_ROOT")
-	if specRoot == "" {
-		specRoot = "spec/versions/0.1/tests"
-	}
-	if _, err := os.Stat(specRoot); err != nil {
-		t.Skipf("spec missing: %v", err)
-	}
+	requireCabi(t)
+	specRoot := requireSpec(t)
 
 	var cases []string
 	err := filepath.Walk(filepath.Join(specRoot, "valid"), func(path string, info os.FileInfo, err error) error {
@@ -157,16 +148,8 @@ func structEqual(a, b any) bool {
 }
 
 func TestConformanceInvalid(t *testing.T) {
-	if os.Getenv("KTAV_LIB_PATH") == "" {
-		t.Skip("KTAV_LIB_PATH not set")
-	}
-	specRoot := os.Getenv("KTAV_SPEC_ROOT")
-	if specRoot == "" {
-		specRoot = "spec/versions/0.1/tests"
-	}
-	if _, err := os.Stat(specRoot); err != nil {
-		t.Skipf("spec missing: %v", err)
-	}
+	requireCabi(t)
+	specRoot := requireSpec(t)
 
 	var cases []string
 	err := filepath.Walk(filepath.Join(specRoot, "invalid"), func(path string, info os.FileInfo, err error) error {
@@ -194,5 +177,4 @@ func TestConformanceInvalid(t *testing.T) {
 			}
 		})
 	}
-	_ = fmt.Sprintf
 }

@@ -19,6 +19,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"sync"
+	"time"
 )
 
 // LibVersion is the version of the companion `ktav_cabi` shared library
@@ -41,7 +42,18 @@ var (
 	once    sync.Once
 	loaded  *Syms
 	loadErr error
+
+	// libPathOverride lets tests pin a built cabi without going through
+	// the env-var public API. Production code never touches this; the
+	// public override path is `$KTAV_LIB_PATH`.
+	libPathOverride string
 )
+
+// SetLibraryPath pins the on-disk path the loader will dlopen. Must be
+// called before the first ktav call (the loader caches via sync.Once).
+// Intended for the test suite — production users override via
+// `$KTAV_LIB_PATH`.
+func SetLibraryPath(path string) { libPathOverride = path }
 
 // Load resolves and loads the shared library exactly once, then returns
 // the same Syms on every subsequent call.
@@ -91,6 +103,12 @@ func bindSym(handle uintptr, name string, out *uintptr) error {
 // resolvePath returns an on-disk path to the shared library, downloading
 // it into the user cache if necessary.
 func resolvePath() (string, error) {
+	if libPathOverride != "" {
+		if _, err := os.Stat(libPathOverride); err != nil {
+			return "", fmt.Errorf("SetLibraryPath(%q): %w", libPathOverride, err)
+		}
+		return libPathOverride, nil
+	}
 	if p := os.Getenv("KTAV_LIB_PATH"); p != "" {
 		if _, err := os.Stat(p); err != nil {
 			return "", fmt.Errorf("KTAV_LIB_PATH=%q: %w", p, err)
@@ -145,8 +163,10 @@ func assetName() (string, error) {
 	}
 }
 
+var httpClient = &http.Client{Timeout: 5 * time.Minute}
+
 func download(url, dst string) error {
-	resp, err := http.Get(url)
+	resp, err := httpClient.Get(url)
 	if err != nil {
 		return err
 	}

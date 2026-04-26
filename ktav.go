@@ -31,6 +31,8 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"runtime"
+	"strconv"
 	"unsafe"
 
 	"github.com/ebitengine/purego"
@@ -73,6 +75,27 @@ func LoadsInto(src string, target any) error {
 		return err
 	}
 	return json.Unmarshal(plain, target)
+}
+
+// NativeVersion returns the version string baked into the loaded
+// `ktav_cabi` shared library. Useful for diagnostics when a stale cache
+// or KTAV_LIB_PATH points at an out-of-sync build.
+func NativeVersion() (string, error) {
+	s, err := native.Load()
+	if err != nil {
+		return "", err
+	}
+	ret, _, _ := purego.SyscallN(s.Version)
+	if ret == 0 {
+		return "", nil
+	}
+	// Walk until NUL — `const char *` from Rust, static lifetime.
+	base := unsafe.Pointer(ret)
+	var n int
+	for *(*byte)(unsafe.Add(base, n)) != 0 {
+		n++
+	}
+	return string(unsafe.Slice((*byte)(base), n)), nil
 }
 
 // Dumps renders a Go value as a Ktav document. The top-level must
@@ -138,7 +161,7 @@ func callStringFn(s *native.Syms, fn uintptr, src []byte) ([]byte, error) {
 
 	// Keep src alive through the call — Go's escape analysis may not
 	// see the C-side access.
-	runtimeKeepAlive(src)
+	runtime.KeepAlive(src)
 
 	if rc != 0 {
 		msg := "ktav: unknown error"
@@ -166,10 +189,6 @@ func copyFromC(ptr, n uintptr) []byte {
 	copy(dst, src)
 	return dst
 }
-
-// runtimeKeepAlive is a thin shim for runtime.KeepAlive so the unsafe
-// import is the only thing tying this file to the runtime.
-func runtimeKeepAlive(x any) { _ = x }
 
 // ─── tagged-JSON <-> Go conversion ────────────────────────────────────
 
@@ -454,28 +473,8 @@ func parseIntegerScalar(s string) (any, error) {
 	}
 	// Try to fit into int64 first; otherwise return *big.Int so the
 	// caller never silently loses precision.
-	var sign int64 = 1
-	rest := s
-	if rest[0] == '-' {
-		sign = -1
-		rest = rest[1:]
-	}
-	var acc int64
-	overflow := false
-	for i := 0; i < len(rest); i++ {
-		c := rest[i]
-		if c < '0' || c > '9' {
-			return nil, fmt.Errorf("non-digit in :i scalar: %q", s)
-		}
-		d := int64(c - '0')
-		if acc > (1<<62)/10 {
-			overflow = true
-			break
-		}
-		acc = acc*10 + d
-	}
-	if !overflow {
-		return acc * sign, nil
+	if n, err := strconv.ParseInt(s, 10, 64); err == nil {
+		return n, nil
 	}
 	bi := new(big.Int)
 	if _, ok := bi.SetString(s, 10); !ok {
@@ -485,8 +484,7 @@ func parseIntegerScalar(s string) (any, error) {
 }
 
 func parseFloatScalar(s string) (float64, error) {
-	var f float64
-	_, err := fmt.Sscanf(s, "%g", &f)
+	f, err := strconv.ParseFloat(s, 64)
 	if err != nil {
 		return 0, fmt.Errorf("bad float literal: %q", s)
 	}
