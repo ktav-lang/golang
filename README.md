@@ -154,5 +154,12 @@ At first call the Go package resolves `ktav_cabi` in this order:
 
 MIT — see [LICENSE](LICENSE).
 
-Ktav spec: [ktav-lang/spec](https://github.com/ktav-lang/spec).
-Reference Rust crate: [ktav-lang/rust](https://github.com/ktav-lang/rust).
+## Other Ktav implementations
+
+- [`spec`](https://github.com/ktav-lang/spec) — specification + conformance suite
+- [`rust`](https://github.com/ktav-lang/rust) — reference Rust crate (`cargo add ktav`)
+- [`csharp`](https://github.com/ktav-lang/csharp) — C# / .NET (`dotnet add package Ktav`)
+- [`java`](https://github.com/ktav-lang/java) — Java / JVM (`io.github.ktav-lang:ktav` on Maven Central)
+- [`js`](https://github.com/ktav-lang/js) — JS / TS (`npm install @ktav-lang/ktav`)
+- [`php`](https://github.com/ktav-lang/php) — PHP (`composer require ktav-lang/ktav`)
+- [`python`](https://github.com/ktav-lang/python) — Python (`pip install ktav`)
