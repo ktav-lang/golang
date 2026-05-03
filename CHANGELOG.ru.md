@@ -11,6 +11,24 @@
 формата Ktav — для последнего см.
 [`ktav-lang/spec`](https://github.com/ktav-lang/spec/blob/main/CHANGELOG.md).
 
+## 0.1.2 — 2026-05-03
+
+### Изменено
+
+- **Подхватили `ktav 0.1.5`** — в upstream Rust crate появился API
+  структурированных ошибок (`Error::Structured(ErrorKind)` с
+  byte-offset spans), retroactive `#[non_exhaustive]` на error-enum-ах,
+  и публичный event-based парсер `ktav::thin`. Поведение Go-биндинга
+  для пользователя не меняется: возвращаемые `error`-значения несут то
+  же читаемое сообщение (Display-строки семи канонических категорий
+  byte-identical к ktav 0.1.4 — проверено собственными pinning-тестами
+  ktav). Маппинг `ktav::ErrorKind` на типизированные Go-error-значения
+  (чтобы можно было `errors.As(err, &ktav.MissingSeparatorSpaceError{})`
+  и т.д.) — отдельная follow-up работа, описанная в
+  [`STRUCTURED_ERRORS.md`](https://github.com/ktav-lang/.github/blob/main/STRUCTURED_ERRORS.md).
+
+`go get github.com/ktav-lang/golang@v0.1.2`.
+
 ## 0.1.1 — 2026-04-26
 
 ### Изменено

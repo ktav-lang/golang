@@ -10,6 +10,23 @@ MINOR 版本升级视为破坏性。
 本 changelog 跟踪**绑定发布**,不涉及 Ktav 格式本身的变更 —— 后者见
 [`ktav-lang/spec`](https://github.com/ktav-lang/spec/blob/main/CHANGELOG.md)。
 
+## 0.1.2 —— 2026-05-03
+
+### 变更
+
+- **已采用 `ktav 0.1.5`** —— 上游 Rust crate 引入了结构化错误 API
+  (`Error::Structured(ErrorKind)` 带字节偏移 span)、对错误枚举追溯
+  应用了 `#[non_exhaustive]`,以及公开的事件式解析器 `ktav::thin`。
+  Go 绑定对用户可见的行为没有变化:返回的 `error` 值仍携带相同的
+  人类可读消息(七个标准类别的 Display 字符串与 ktav 0.1.4 完全
+  字节相同,由 ktav 自己的 pinning 测试验证)。将 `ktav::ErrorKind`
+  映射到类型化的 Go error 值(以便调用方可以使用
+  `errors.As(err, &ktav.MissingSeparatorSpaceError{})` 等)是单独
+  的后续工作,记录在
+  [`STRUCTURED_ERRORS.md`](https://github.com/ktav-lang/.github/blob/main/STRUCTURED_ERRORS.md)。
+
+`go get github.com/ktav-lang/golang@v0.1.2`。
+
 ## 0.1.1 —— 2026-04-26
 
 ### 变更
