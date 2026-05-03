@@ -10,7 +10,7 @@ repository = "https://github.com/ktav-lang/golang"
 rust-version = "1.70"
 
 [workspace.dependencies]
-ktav = "0.1"
+ktav = "0.1.5"
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
 indexmap = "2"
