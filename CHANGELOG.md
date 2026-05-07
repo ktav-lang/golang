@@ -11,6 +11,27 @@ This changelog tracks **binding releases**, not changes to the Ktav format
 itself — for the latter see
 [`ktav-lang/spec`](https://github.com/ktav-lang/spec/blob/main/CHANGELOG.md).
 
+## 0.2.0 — 2026-05-07
+
+### Changed (breaking)
+
+- **Picked up `ktav 0.2.0`** — multi-line strings now serialize in the
+  indented stripped `( ... )` form by default (verbatim `(( ... ))`
+  remains as fallback for content with leading whitespace or sole-`)`
+  lines). `:f 42` accepts integer literals (parsed as `42.0`).
+  See the
+  [`ktav` crate CHANGELOG](https://github.com/ktav-lang/rust/blob/main/CHANGELOG.md#020--2026-05-07)
+  for the full delta.
+
+  Code comparing serialized output byte-for-byte to a baked-in
+  `((...))` literal must be updated. Round-trip is unchanged.
+
+### Spec
+
+- spec submodule synced (typed_float_without_decimal moved invalid →
+  valid/typed_float_integer_body).
+
+
 ## 0.1.2 — 2026-05-03
 
 ### Changed
