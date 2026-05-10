@@ -109,9 +109,10 @@ A complete runnable version lives in [`examples/basic`](examples/basic/main.go).
 
 | Function | Purpose |
 | --- | --- |
-| `Loads(s string) (any, error)` | Parse a Ktav document into native Go values. |
+| `Loads(s string) (any, error)` | Parse a Ktav document into native Go values. Top-level may be an Object (`map[string]any`) or an Array (`[]any`) per spec § 5.0.1. |
 | `LoadsInto(s string, target any) error` | Parse into an arbitrary `target` (struct, map, …) via `encoding/json`. |
-| `Dumps(v any) (string, error)` | Render a Go value as Ktav text. Top-level must encode to an object. |
+| `Dumps(v any) (string, error)` | Render a Go value as Ktav text. Top-level must encode to an object or array. |
+| `DumpsForceStrings(v any) (string, error)` | Like `Dumps`, but coerces every leaf scalar (`:i`, `:f`, bool, null) to a String via the raw `::` marker. Compounds preserve their structure. |
 
 ## Type mapping
 
