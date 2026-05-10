@@ -11,6 +11,39 @@ This changelog tracks **binding releases**, not changes to the Ktav format
 itself — for the latter see
 [`ktav-lang/spec`](https://github.com/ktav-lang/spec/blob/main/CHANGELOG.md).
 
+## 0.3.1 — 2026-05-10
+
+### Added
+
+- **Top-level Array support** (spec 0.1.1, § 5.0.1) — `Loads` now
+  returns a `[]any` when the document's first content line is an
+  array-item line (bare scalar, typed marker, lone `{`/`[`, or
+  multi-line opener). Previously top-level Arrays were rejected.
+- **`Dumps` accepts top-level arrays** — pass any slice (`[]any`,
+  `[]string`, etc.) and the rendered Ktav has bare item-per-line at
+  the top, no surrounding `[...]`.
+- **`DumpsForceStrings(v any) (string, error)`** — renders a Go value
+  as Ktav with every scalar coerced to a String (typed integers,
+  typed floats, booleans, null are flattened to their textual form
+  via the raw-marker `::`). Compounds preserve their structure.
+  The output round-trips back through `Loads` as the same set of
+  String scalars — useful for environments or downstream consumers
+  that don't understand the `:i` / `:f` typed markers.
+
+### Changed
+
+- **Picked up `ktav 0.3.1`** — tracks the upstream Rust crate's
+  top-level Array support and `to_string_force_strings` API. Spec
+  submodule synced to `7256816` (spec 0.1.1). See the
+  [`ktav` crate CHANGELOG](https://github.com/ktav-lang/rust/blob/main/CHANGELOG.md#031--2026-05-10)
+  for the full delta.
+- **C ABI now exports five symbols** — added `ktav_dumps_force_strings`
+  alongside the existing `ktav_loads` / `ktav_dumps` / `ktav_free` /
+  `ktav_version`. The Go loader binds all five at first use; pinning
+  `KTAV_LIB_PATH` to a pre-0.3.1 binary will fail with a missing
+  symbol error.
+
+
 ## 0.3.0 — 2026-05-08
 
 ### Changed

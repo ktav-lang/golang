@@ -22,11 +22,12 @@
 //!
 //! ## C ABI
 //!
-//! Four functions, all use the same "caller-owned pointer, callee-owned
+//! Five functions, all use the same "caller-owned pointer, callee-owned
 //! buffer" pattern:
 //!
 //! - `ktav_loads(src, src_len, out_buf, out_len, out_err) -> i32`
 //! - `ktav_dumps(src, src_len, out_buf, out_len, out_err) -> i32`
+//! - `ktav_dumps_force_strings(src, src_len, out_buf, out_len, out_err) -> i32`
 //! - `ktav_free(ptr, len)` — free a buffer returned by loads/dumps.
 //! - `ktav_version()` — NUL-terminated static string, for sanity checks.
 //!
@@ -153,9 +154,9 @@ pub unsafe extern "C" fn ktav_dumps(
         }
     };
 
-    if !matches!(value, Value::Object(_)) {
+    if !matches!(value, Value::Object(_) | Value::Array(_)) {
         emit_err(
-            "top-level Ktav document must be an object".to_string(),
+            "top-level Ktav document must be an object or array".to_string(),
             out_err,
             out_err_len,
         );
@@ -163,6 +164,66 @@ pub unsafe extern "C" fn ktav_dumps(
     }
 
     let text = match ktav::render::render(&value) {
+        Ok(s) => s,
+        Err(e) => {
+            emit_err(e.to_string(), out_err, out_err_len);
+            return 1;
+        }
+    };
+
+    emit(text.into_bytes(), out_buf, out_len);
+    0
+}
+
+/// Render a JSON document to Ktav text with **every scalar coerced to
+/// a String** — typed integers (`:i`), typed floats (`:f`), booleans,
+/// and null are flattened to their textual form via the raw-marker
+/// `::`. Compounds preserve their structure. The output round-trips
+/// back through `ktav_loads` as the same set of String scalars.
+///
+/// # Safety
+/// Same as [`ktav_loads`].
+#[no_mangle]
+pub unsafe extern "C" fn ktav_dumps_force_strings(
+    src: *const u8,
+    src_len: usize,
+    out_buf: *mut *mut u8,
+    out_len: *mut usize,
+    out_err: *mut *mut c_char,
+    out_err_len: *mut usize,
+) -> c_int {
+    *out_buf = ptr::null_mut();
+    *out_len = 0;
+    *out_err = ptr::null_mut();
+    *out_err_len = 0;
+
+    let bytes = slice::from_raw_parts(src, src_len);
+    let wire: WireValue = match serde_json::from_slice(bytes) {
+        Ok(w) => w,
+        Err(e) => {
+            emit_err(format!("input JSON: {e}"), out_err, out_err_len);
+            return 1;
+        }
+    };
+
+    let value = match wire.into_value() {
+        Ok(v) => v,
+        Err(e) => {
+            emit_err(e, out_err, out_err_len);
+            return 1;
+        }
+    };
+
+    if !matches!(value, Value::Object(_) | Value::Array(_)) {
+        emit_err(
+            "top-level Ktav document must be an object or array".to_string(),
+            out_err,
+            out_err_len,
+        );
+        return 1;
+    }
+
+    let text = match ktav::to_string_force_strings(&value) {
         Ok(s) => s,
         Err(e) => {
             emit_err(e.to_string(), out_err, out_err_len);

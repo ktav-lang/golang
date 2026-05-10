@@ -28,7 +28,10 @@
 // On encode, Go *big.Int always emits `:i`; Go int / int64 / uint64
 // emit `:i`; Go float64 emits `:f`; Go string emits a bare scalar.
 // NaN / ±Inf are rejected. Top-level value must encode to a Ktav
-// object (i.e. a map[string]any or struct).
+// object (i.e. a map[string]any or struct) or a Ktav array (i.e. a
+// []any or any other JSON-encodable slice). Top-level Arrays render
+// as bare item-per-line — no surrounding `[...]` brackets, per spec
+// § 5.0.1 (added in 0.1.1).
 package ktav
 
 import (
@@ -112,13 +115,39 @@ func NativeVersion() (string, error) {
 }
 
 // Dumps renders a Go value as a Ktav document. The top-level must
-// encode to a JSON object (map[string]any, struct, etc.).
+// encode to a JSON object (map[string]any, struct, etc.) or a JSON
+// array (a slice). Top-level Arrays render as bare item-per-line —
+// no surrounding `[...]` brackets, per spec § 5.0.1 (added in 0.1.1).
 func Dumps(v any) (string, error) {
 	tagged, err := encodeTagged(v)
 	if err != nil {
 		return "", err
 	}
 	out, err := dumpsJSON(tagged)
+	if err != nil {
+		return "", err
+	}
+	return string(out), nil
+}
+
+// DumpsForceStrings renders a Go value as a Ktav document with **every
+// scalar coerced to a String**: typed integers (`:i`), typed floats
+// (`:f`), booleans, and null are flattened to their textual form via
+// the raw-marker `::`. Compounds (Object / Array) preserve their
+// structure; only leaf scalars are coerced.
+//
+// The output round-trips back through `Loads` as the same set of
+// String scalars — useful for environments or downstream consumers
+// that don't understand the `:i` / `:f` typed markers, or for diffs
+// where you want the textual form to be the canonical source of truth.
+//
+// Top-level shape rules match `Dumps`: object or array.
+func DumpsForceStrings(v any) (string, error) {
+	tagged, err := encodeTagged(v)
+	if err != nil {
+		return "", err
+	}
+	out, err := dumpsForceStringsJSON(tagged)
 	if err != nil {
 		return "", err
 	}
@@ -141,6 +170,14 @@ func dumpsJSON(src []byte) ([]byte, error) {
 		return nil, err
 	}
 	return callStringFn(s, s.Dumps, src)
+}
+
+func dumpsForceStringsJSON(src []byte) ([]byte, error) {
+	s, err := native.Load()
+	if err != nil {
+		return nil, err
+	}
+	return callStringFn(s, s.DumpsForceStrings, src)
 }
 
 // callStringFn invokes a C ABI function with signature

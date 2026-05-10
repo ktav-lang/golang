@@ -155,10 +155,115 @@ func floatNaN() float64 {
 	return zero / zero
 }
 
-func TestDumpsRejectsNonObject(t *testing.T) {
+func TestDumpsRejectsScalarRoot(t *testing.T) {
 	requireCabi(t)
-	_, err := ktav.Dumps([]any{1, 2, 3})
+	// Top-level scalars (Bool/String/Int/Float/Null) are still rejected
+	// — only Object and Array are valid roots per spec § 5.0.1.
+	_, err := ktav.Dumps("bare-string")
 	if err == nil {
-		t.Fatal("expected error for top-level array")
+		t.Fatal("expected error for top-level scalar string")
+	}
+	_, err = ktav.Dumps(int64(42))
+	if err == nil {
+		t.Fatal("expected error for top-level scalar int")
+	}
+	_, err = ktav.Dumps(true)
+	if err == nil {
+		t.Fatal("expected error for top-level scalar bool")
+	}
+	_, err = ktav.Dumps(nil)
+	if err == nil {
+		t.Fatal("expected error for top-level null")
+	}
+}
+
+func TestDumpsTopLevelArray(t *testing.T) {
+	requireCabi(t)
+	out, err := ktav.Dumps([]any{"foo", "bar", "baz"})
+	if err != nil {
+		t.Fatalf("Dumps top-level array: %v", err)
+	}
+	back, err := ktav.Loads(out)
+	if err != nil {
+		t.Fatalf("Loads back: %v\n---\n%s", err, out)
+	}
+	arr, ok := back.([]any)
+	if !ok {
+		t.Fatalf("back is %T, want []any", back)
+	}
+	if !reflect.DeepEqual(arr, []any{"foo", "bar", "baz"}) {
+		t.Fatalf("round-trip mismatch: %#v", arr)
+	}
+}
+
+func TestLoadsTopLevelArray(t *testing.T) {
+	requireCabi(t)
+	src := "foo\nbar\nbaz\n"
+	got, err := ktav.Loads(src)
+	if err != nil {
+		t.Fatalf("Loads: %v", err)
+	}
+	arr, ok := got.([]any)
+	if !ok {
+		t.Fatalf("top is %T, want []any", got)
+	}
+	if !reflect.DeepEqual(arr, []any{"foo", "bar", "baz"}) {
+		t.Fatalf("got %#v", arr)
+	}
+}
+
+func TestDumpsForceStrings(t *testing.T) {
+	requireCabi(t)
+	doc := map[string]any{
+		"port":  int64(8080),
+		"ratio": 0.5,
+		"flag":  true,
+		"empty": nil,
+		"name":  "demo",
+	}
+	out, err := ktav.DumpsForceStrings(doc)
+	if err != nil {
+		t.Fatalf("DumpsForceStrings: %v", err)
+	}
+	// All scalars should round-trip as Strings.
+	back, err := ktav.Loads(out)
+	if err != nil {
+		t.Fatalf("Loads back: %v\n---\n%s", err, out)
+	}
+	m, ok := back.(map[string]any)
+	if !ok {
+		t.Fatalf("back is %T", back)
+	}
+	want := map[string]any{
+		"port":  "8080",
+		"ratio": "0.5",
+		"flag":  "true",
+		"empty": "null",
+		"name":  "demo",
+	}
+	for k, v := range want {
+		if m[k] != v {
+			t.Fatalf("%s: got %#v (%T), want %q", k, m[k], m[k], v)
+		}
+	}
+}
+
+func TestDumpsForceStringsTopLevelArray(t *testing.T) {
+	requireCabi(t)
+	out, err := ktav.DumpsForceStrings([]any{int64(1), 2.5, true, nil, "x"})
+	if err != nil {
+		t.Fatalf("DumpsForceStrings: %v", err)
+	}
+	back, err := ktav.Loads(out)
+	if err != nil {
+		t.Fatalf("Loads back: %v\n---\n%s", err, out)
+	}
+	arr, ok := back.([]any)
+	if !ok {
+		t.Fatalf("back is %T, want []any", back)
+	}
+	want := []any{"1", "2.5", "true", "null", "x"}
+	if !reflect.DeepEqual(arr, want) {
+		t.Fatalf("got %#v, want %#v", arr, want)
 	}
 }

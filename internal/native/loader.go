@@ -24,7 +24,7 @@ import (
 
 // LibVersion is the version of the companion `ktav_cabi` shared library
 // this Go module expects. It is in lockstep with the Go module tag.
-const LibVersion = "0.1.1"
+const LibVersion = "0.3.1"
 
 // releaseAssetBase is the GitHub Release where prebuilt binaries live.
 // Tagged `v<LibVersion>`; per-platform asset naming is handled below.
@@ -32,10 +32,11 @@ const releaseAssetBase = "https://github.com/ktav-lang/golang/releases/download/
 
 // Syms holds the function pointers obtained from the loaded library.
 type Syms struct {
-	Loads   uintptr
-	Dumps   uintptr
-	Free    uintptr
-	Version uintptr
+	Loads             uintptr
+	Dumps             uintptr
+	DumpsForceStrings uintptr
+	Free              uintptr
+	Version           uintptr
 }
 
 var (
@@ -75,6 +76,10 @@ func Load() (*Syms, error) {
 			return
 		}
 		if err := bindSym(handle, "ktav_dumps", &s.Dumps); err != nil {
+			loadErr = err
+			return
+		}
+		if err := bindSym(handle, "ktav_dumps_force_strings", &s.DumpsForceStrings); err != nil {
 			loadErr = err
 			return
 		}
