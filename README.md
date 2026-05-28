@@ -26,15 +26,15 @@ import (
 
 const src = `
 service: web
-port:i 8080
-ratio:f 0.75
+port: 8080
+ratio: 0.75
 tls: true
 tags: [
     prod
     eu-west-1
 ]
 db.host: primary.internal
-db.timeout:i 30
+db.timeout: 30
 `
 
 type Config struct {
@@ -93,12 +93,12 @@ doc := map[string]any{
 out, _ := ktav.Dumps(doc)
 fmt.Print(out)
 // name: frontend
-// port:i 8443
+// port: 8443
 // tls: true
-// ratio:f 0.95
+// ratio: 0.95
 // upstreams: [
-//     { host: a.example  port:i 1080 }
-//     { host: b.example  port:i 1080 }
+//     { host: a.example  port: 1080 }
+//     { host: b.example  port: 1080 }
 // ]
 // notes: null
 ```
@@ -112,7 +112,9 @@ A complete runnable version lives in [`examples/basic`](examples/basic/main.go).
 | `Loads(s string) (any, error)` | Parse a Ktav document into native Go values. Top-level may be an Object (`map[string]any`) or an Array (`[]any`) per spec § 5.0.1. |
 | `LoadsInto(s string, target any) error` | Parse into an arbitrary `target` (struct, map, …) via `encoding/json`. |
 | `Dumps(v any) (string, error)` | Render a Go value as Ktav text. Top-level must encode to an object or array. |
-| `DumpsForceStrings(v any) (string, error)` | Like `Dumps`, but coerces every leaf scalar (`:i`, `:f`, bool, null) to a String via the raw `::` marker. Compounds preserve their structure. |
+| `DumpsForceStrings(v any) (string, error)` | Like `Dumps`, but coerces every leaf scalar (integer, float, bool, null) to a String via the raw `::` marker. Compounds preserve their structure. |
+| `EmitCanonical(v any) (string, error)` | Render a Go value as canonical Ktav (spec § 5.9). Key order follows Go map iteration (alphabetical for `map[string]any`). |
+| `CanonicalFromSource(src string) (string, error)` | Parse Ktav and immediately emit canonical form, preserving source key order. |
 
 ## Type mapping
 
@@ -120,16 +122,18 @@ A complete runnable version lives in [`examples/basic`](examples/basic/main.go).
 | ---------------- | ----------------------------------------------- |
 | `null`           | `nil`                                           |
 | `true` / `false` | `bool`                                          |
-| `:i <digits>`    | `int64` if it fits, else `*big.Int`             |
-| `:f <number>`    | `float64`                                       |
+| integer scalar   | `int64` if it fits, else `*big.Int`             |
+| float scalar     | `float64`                                       |
 | bare scalar      | `string`                                        |
 | `[ ... ]`        | `[]any`                                         |
 | `{ ... }`        | `map[string]any` (insertion order preserved)    |
 
-On encode, Go `int*` / `uint*` / `*big.Int` become `:i`; `float32` /
-`float64` become `:f`; `string` stays a bare scalar. `NaN` and `±Inf`
-are rejected. Structs are serialized through `encoding/json` first, so
-`json:"..."` tags are honoured.
+Under spec 0.5 integers and floats are inferred from the scalar body's
+lexical form (no typed markers). On encode, Go `int*` / `uint*` /
+`*big.Int` become integer scalars; `float32` / `float64` become float
+scalars; `string` stays a bare scalar. `NaN` and `±Inf` are rejected.
+Structs are serialized through `encoding/json` first, so `json:"..."`
+tags are honoured.
 
 ## How the native library is resolved
 
@@ -153,7 +157,8 @@ At first call the Go package resolves `ktav_cabi` in this order:
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT OR Apache-2.0 — see [LICENSE-MIT](LICENSE-MIT) and
+[LICENSE-APACHE](LICENSE-APACHE).
 
 ## Other Ktav implementations
 

@@ -26,15 +26,15 @@ import (
 
 const src = `
 service: web
-port:i 8080
-ratio:f 0.75
+port: 8080
+ratio: 0.75
 tls: true
 tags: [
     prod
     eu-west-1
 ]
 db.host: primary.internal
-db.timeout:i 30
+db.timeout: 30
 `
 
 type Config struct {
@@ -102,7 +102,9 @@ fmt.Print(out)
 | --- | --- |
 | `Loads(s string) (any, error)` | 将 Ktav 文档解析为原生 Go 值。 |
 | `LoadsInto(s string, target any) error` | 通过 `encoding/json` 解析到任意 `target`（struct、map 等）。 |
-| `Dumps(v any) (string, error)` | 将 Go 值渲染为 Ktav 文本。顶层必须为对象。 |
+| `Dumps(v any) (string, error)` | 将 Go 值渲染为 Ktav 文本。顶层必须为对象或数组。 |
+| `DumpsForceStrings(v any) (string, error)` | 同 `Dumps`，但所有叶标量（integer、float、bool、null）通过 `::` 强制为 String。 |
+| `EmitCanonical(v any) (string, error)` | 输出规范 Ktav（spec § 5.9 — 字节确定性，无内联复合）。 |
 
 ## 类型映射
 
@@ -110,15 +112,16 @@ fmt.Print(out)
 | ---------------- | ------------------------------------------------ |
 | `null`           | `nil`                                            |
 | `true` / `false` | `bool`                                           |
-| `:i <digits>`    | `int64`（可容纳）或 `*big.Int`                   |
-| `:f <number>`    | `float64`                                        |
+| integer scalar   | `int64`（可容纳）或 `*big.Int`                   |
+| float scalar     | `float64`                                        |
 | 裸标量           | `string`                                         |
 | `[ ... ]`        | `[]any`                                          |
 | `{ ... }`        | `map[string]any`（保留插入顺序）                 |
 
-编码时 Go `int*` / `uint*` / `*big.Int` → `:i`；`float32` / `float64` →
-`:f`；`string` 保持裸标量。`NaN` 与 `±Inf` 会被拒绝。结构体先走
-`encoding/json`，所以 `json:"..."` tag 生效。
+spec 0.5 中 integer 与 float 从标量体的词法形式推断（无类型标记）。编码时
+Go `int*` / `uint*` / `*big.Int` → integer scalar；`float32` / `float64`
+→ float scalar；`string` 保持裸标量。`NaN` 与 `±Inf` 会被拒绝。结构体先
+走 `encoding/json`，`json:"..."` tag 生效。
 
 ## 原生库解析顺序
 
@@ -140,7 +143,8 @@ fmt.Print(out)
 
 ## 许可
 
-MIT —— 详见 [LICENSE](LICENSE)。
+MIT OR Apache-2.0 —— 详见 [LICENSE-MIT](LICENSE-MIT) 和
+[LICENSE-APACHE](LICENSE-APACHE)。
 
 ## 其他 Ktav 实现
 

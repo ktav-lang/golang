@@ -14,24 +14,29 @@
 //	─────────────── ───────────────────────────
 //	null              nil
 //	true / false      bool
-//	:i <digits>       int64 if it fits, else *big.Int
-//	:f <number>       float64
+//	integer scalar    int64 if it fits, else *big.Int
+//	float scalar      float64
 //	bare scalar       string
 //	[ ... ]           []any
 //	{ ... }           map[string]any (key order not preserved)
+//
+// Under spec 0.5, integer and float values are inferred from the
+// scalar body's lexical form (bare `42` → Integer, `3.14` → Float).
+// The typed markers `:i` / `:f` no longer exist. Integers that
+// overflow i64 fall back to String (not *big.Int).
 //
 // Key order from the source is **not** preserved on either side: decode
 // returns a plain `map[string]any`, and encode goes through
 // `encoding/json`, which emits object keys in alphabetical order. If
 // you need a fixed shape, use `LoadsInto` into a struct.
 //
-// On encode, Go *big.Int always emits `:i`; Go int / int64 / uint64
-// emit `:i`; Go float64 emits `:f`; Go string emits a bare scalar.
-// NaN / ±Inf are rejected. Top-level value must encode to a Ktav
-// object (i.e. a map[string]any or struct) or a Ktav array (i.e. a
-// []any or any other JSON-encodable slice). Top-level Arrays render
-// as bare item-per-line — no surrounding `[...]` brackets, per spec
-// § 5.0.1 (added in 0.1.1).
+// On encode, Go *big.Int always emits an integer scalar; Go int /
+// int64 / uint64 emit an integer scalar; Go float64 emits a float
+// scalar. NaN / ±Inf are rejected. Top-level value must encode to a
+// Ktav object (i.e. a map[string]any or struct) or a Ktav array
+// (i.e. a []any or any other JSON-encodable slice). Top-level Arrays
+// render as bare item-per-line — no surrounding `[...]` brackets, per
+// spec § 5.0.1.
 package ktav
 
 import (
@@ -117,7 +122,7 @@ func NativeVersion() (string, error) {
 // Dumps renders a Go value as a Ktav document. The top-level must
 // encode to a JSON object (map[string]any, struct, etc.) or a JSON
 // array (a slice). Top-level Arrays render as bare item-per-line —
-// no surrounding `[...]` brackets, per spec § 5.0.1 (added in 0.1.1).
+// no surrounding `[...]` brackets, per spec § 5.0.1.
 func Dumps(v any) (string, error) {
 	tagged, err := encodeTagged(v)
 	if err != nil {
@@ -131,15 +136,15 @@ func Dumps(v any) (string, error) {
 }
 
 // DumpsForceStrings renders a Go value as a Ktav document with **every
-// scalar coerced to a String**: typed integers (`:i`), typed floats
-// (`:f`), booleans, and null are flattened to their textual form via
-// the raw-marker `::`. Compounds (Object / Array) preserve their
-// structure; only leaf scalars are coerced.
+// scalar coerced to a String**: integers, floats, booleans, and null
+// are flattened to their textual form via the raw-marker `::`.
+// Compounds (Object / Array) preserve their structure; only leaf
+// scalars are coerced.
 //
 // The output round-trips back through `Loads` as the same set of
 // String scalars — useful for environments or downstream consumers
-// that don't understand the `:i` / `:f` typed markers, or for diffs
-// where you want the textual form to be the canonical source of truth.
+// that don't understand inferred numeric types, or for diffs where
+// you want the textual form to be the canonical source of truth.
 //
 // Top-level shape rules match `Dumps`: object or array.
 func DumpsForceStrings(v any) (string, error) {
@@ -148,6 +153,45 @@ func DumpsForceStrings(v any) (string, error) {
 		return "", err
 	}
 	out, err := dumpsForceStringsJSON(tagged)
+	if err != nil {
+		return "", err
+	}
+	return string(out), nil
+}
+
+// EmitCanonical renders a Go value as a **canonical** Ktav document
+// (spec § 5.9 — byte-deterministic output, no inline compounds,
+// canonical float/integer normalisation). Two calls with identical
+// values always produce identical bytes.
+//
+// Note: because Go maps are unordered, object key order in the output
+// is determined by the tagged-JSON encoding (alphabetical for
+// map[string]any). To preserve source key order, use
+// [CanonicalFromSource] instead.
+//
+// Top-level shape rules match `Dumps`: object or array.
+func EmitCanonical(v any) (string, error) {
+	tagged, err := encodeTagged(v)
+	if err != nil {
+		return "", err
+	}
+	out, err := emitCanonicalJSON(tagged)
+	if err != nil {
+		return "", err
+	}
+	return string(out), nil
+}
+
+// CanonicalFromSource parses a Ktav document and immediately emits it
+// in canonical form (spec § 5.9), preserving the source's insertion
+// order of object keys. This is equivalent to `ktav parse | ktav
+// emit-canonical` on the command line.
+func CanonicalFromSource(src string) (string, error) {
+	js, err := loadsJSON([]byte(src))
+	if err != nil {
+		return "", err
+	}
+	out, err := emitCanonicalJSON(js)
 	if err != nil {
 		return "", err
 	}
@@ -178,6 +222,14 @@ func dumpsForceStringsJSON(src []byte) ([]byte, error) {
 		return nil, err
 	}
 	return callStringFn(s, s.DumpsForceStrings, src)
+}
+
+func emitCanonicalJSON(src []byte) ([]byte, error) {
+	s, err := native.Load()
+	if err != nil {
+		return nil, err
+	}
+	return callStringFn(s, s.EmitCanonical, src)
 }
 
 // callStringFn invokes a C ABI function with signature

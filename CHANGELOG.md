@@ -11,6 +11,49 @@ This changelog tracks **binding releases**, not changes to the Ktav format
 itself — for the latter see
 [`ktav-lang/spec`](https://github.com/ktav-lang/spec/blob/main/CHANGELOG.md).
 
+## 0.5.0 — 2026-05-28
+
+### Breaking
+
+- **Spec 0.5.0**: typed markers `:i` / `:f` no longer exist. Numbers
+  are inferred from the scalar body's lexical form (`42` → Integer,
+  `3.14` → Float). Documents written for spec 0.1.x with explicit
+  typed markers parse differently and must be updated.
+- **`##` comments**: single `#` is now a literal character; comments
+  require `##`. Update any Ktav source that used `# comment`.
+- **Float normalisation**: Float values are stored in canonical
+  shortest-decimal form (no underscores, no leading `+`). Byte-for-byte
+  comparison against old serialised output may fail.
+- **C ABI now exports six symbols** — `ktav_emit_canonical` is added;
+  pinning `KTAV_LIB_PATH` to a pre-0.5.0 binary will fail with a
+  missing symbol error.
+
+### Added
+
+- **`EmitCanonical(v any) (string, error)`** — renders a Go value as
+  canonical Ktav (spec § 5.9): byte-deterministic output, no inline
+  compounds, canonical integer / float normalisation. Two calls with
+  identical inputs always produce identical bytes.
+- **`TestConformanceCanonical`** — new conformance suite that verifies
+  `EmitCanonical` output matches every `.canonical.ktav` oracle in the
+  spec fixtures.
+
+### Changed
+
+- **Picked up `ktav 0.5.0`** — tracks the upstream Rust crate's
+  spec 0.5 implementation: inferred numeric types, `##` comments,
+  `emit_canonical` API. Spec submodule synced to tag `v0.5.0`. See the
+  [`ktav` crate CHANGELOG](https://github.com/ktav-lang/rust/blob/main/CHANGELOG.md#050)
+  for the full delta.
+- **License changed to `MIT OR Apache-2.0`** — matching the rest of the
+  `ktav-lang` ecosystem. `LICENSE` is renamed to `LICENSE-MIT`;
+  `LICENSE-APACHE` is added. The SPDX expression in `Cargo.toml` is
+  updated accordingly.
+- **Conformance test suite updated to spec 0.5 fixtures** — path
+  `spec/versions/0.5/tests`; `.canonical.ktav` files are excluded from
+  the JSON-oracle test and handled by the new canonical suite.
+
+
 ## 0.3.1 — 2026-05-10
 
 ### Added

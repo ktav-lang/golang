@@ -10,6 +10,37 @@ MINOR 版本升级视为破坏性。
 本 changelog 跟踪**绑定发布**,不涉及 Ktav 格式本身的变更 —— 后者见
 [`ktav-lang/spec`](https://github.com/ktav-lang/spec/blob/main/CHANGELOG.md)。
 
+## 0.5.0 —— 2026-05-28
+
+### 破坏性变更
+
+- **Spec 0.5.0**：类型标记 `:i` / `:f` 不再存在。数字从标量体词法形式
+  推断（`42` → Integer，`3.14` → Float）。使用旧标记的 spec 0.1.x
+  文档需更新。
+- **`##` 注释**：单 `#` 现为字面字符；注释需使用 `##`。
+- **Float 规范化**：Float 值以 shortest-decimal 规范形式存储。旧序列化
+  输出的字节级比对可能失败。
+- **C ABI 新增第六个符号** `ktav_emit_canonical`；旧二进制会报符号缺失。
+
+### 新增
+
+- **`EmitCanonical(v any) (string, error)`** — 输出规范 Ktav（spec § 5.9）：
+  字节确定性，无内联复合，规范 integer / float 正规化。
+- **`TestConformanceCanonical`** — 验证 `EmitCanonical` 输出与每个
+  `.canonical.ktav` oracle 字节一致。
+
+### 变更
+
+- **升级到 `ktav 0.5.0`** — 跟踪上游 Rust crate 的 spec 0.5 实现：
+  推断数字类型、`##` 注释、`emit_canonical` API。spec submodule 同步
+  至标签 `v0.5.0`。
+- **许可证变更为 `MIT OR Apache-2.0`** — 与 `ktav-lang` 生态系统保持
+  一致。`LICENSE` 改名为 `LICENSE-MIT`；新增 `LICENSE-APACHE`。
+- **一致性测试更新至 spec 0.5 fixtures** — 路径
+  `spec/versions/0.5/tests`；`.canonical.ktav` 从 JSON oracle 测试
+  中排除，由新规范测试处理。
+
+
 ## 0.1.2 —— 2026-05-03
 
 ### 变更

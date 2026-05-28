@@ -21,7 +21,8 @@ func TestConformanceValid(t *testing.T) {
 		if err != nil {
 			return err
 		}
-		if !info.IsDir() && strings.HasSuffix(path, ".ktav") {
+		if !info.IsDir() && strings.HasSuffix(path, ".ktav") &&
+			!strings.HasSuffix(path, ".canonical.ktav") {
 			cases = append(cases, path)
 		}
 		return nil
@@ -147,6 +148,51 @@ func structEqual(a, b any) bool {
 	}
 }
 
+// TestConformanceCanonical verifies that EmitCanonical round-trips: parse the
+// base `.ktav` fixture, emit canonical form, and compare byte-for-byte with
+// the `.canonical.ktav` oracle.
+func TestConformanceCanonical(t *testing.T) {
+	requireCabi(t)
+	specRoot := requireSpec(t)
+
+	var cases []string
+	err := filepath.Walk(filepath.Join(specRoot, "valid"), func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if !info.IsDir() && strings.HasSuffix(path, ".canonical.ktav") {
+			cases = append(cases, path)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("walk: %v", err)
+	}
+
+	for _, canonicalPath := range cases {
+		basePath := strings.TrimSuffix(canonicalPath, ".canonical.ktav") + ".ktav"
+		name := strings.TrimPrefix(canonicalPath, specRoot+string(filepath.Separator))
+		t.Run(name, func(t *testing.T) {
+			src, err := os.ReadFile(basePath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			oracle, err := os.ReadFile(canonicalPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			canonical, err := ktav.CanonicalFromSource(string(src))
+			if err != nil {
+				t.Fatalf("CanonicalFromSource: %v\n--- input ---\n%s", err, src)
+			}
+			if canonical != string(oracle) {
+				t.Fatalf("canonical mismatch\nwant:\n%s\ngot:\n%s", oracle, canonical)
+			}
+		})
+	}
+}
+
 func TestConformanceInvalid(t *testing.T) {
 	requireCabi(t)
 	specRoot := requireSpec(t)
@@ -156,7 +202,8 @@ func TestConformanceInvalid(t *testing.T) {
 		if err != nil {
 			return err
 		}
-		if !info.IsDir() && strings.HasSuffix(path, ".ktav") {
+		if !info.IsDir() && strings.HasSuffix(path, ".ktav") &&
+			!strings.HasSuffix(path, ".canonical.ktav") {
 			cases = append(cases, path)
 		}
 		return nil

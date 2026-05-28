@@ -13,15 +13,15 @@ import (
 func TestSmokeLoads(t *testing.T) {
 	requireCabi(t)
 	src := `service: web
-port:i 8080
-ratio:f 0.75
+port: 8080
+ratio: 0.75
 tls: true
 tags: [
     prod
     eu-west-1
 ]
 db.host: primary
-db.timeout:i 30
+db.timeout: 30
 `
 	got, err := ktav.Loads(src)
 	if err != nil {
@@ -98,21 +98,25 @@ func TestSmokeRoundTrip(t *testing.T) {
 
 func TestSmokeBigInt(t *testing.T) {
 	requireCabi(t)
-	src := `value:i 99999999999999999999`
+	// Under spec 0.5, integers that overflow i64 fall back to String.
+	src := `value: 99999999999999999999`
 	got, err := ktav.Loads(src)
 	if err != nil {
 		t.Fatal(err)
 	}
 	m := got.(map[string]any)
-	bi, ok := m["value"].(*big.Int)
+	s, ok := m["value"].(string)
 	if !ok {
-		t.Fatalf("value is %T", m["value"])
+		t.Fatalf("value is %T, want string (overflow → String per spec 0.5)", m["value"])
 	}
-	if bi.String() != "99999999999999999999" {
-		t.Fatalf("bigint = %s", bi.String())
+	if s != "99999999999999999999" {
+		t.Fatalf("bigint string = %q", s)
 	}
 
-	// Re-encode
+	// Round-trip via Dumps with a *big.Int still encodes as an integer
+	// scalar on the wire (the renderer accepts Value::Integer).
+	bi := new(big.Int)
+	bi.SetString("99999999999999999999", 10)
 	out, err := ktav.Dumps(map[string]any{"v": bi})
 	if err != nil {
 		t.Fatal(err)
@@ -147,6 +151,43 @@ func TestDumpsNaNRejected(t *testing.T) {
 	var ktavErr *ktav.Error
 	if !errors.As(err, &ktavErr) {
 		t.Fatalf("Go-side error not *ktav.Error: %T (%v)", err, err)
+	}
+}
+
+func TestEmitCanonical(t *testing.T) {
+	requireCabi(t)
+	// Round-trip: parse → EmitCanonical → parse → compare.
+	src := `name: demo
+count: 42
+ratio: 0.5
+flag: true
+nothing: null
+`
+	got, err := ktav.Loads(src)
+	if err != nil {
+		t.Fatalf("Loads: %v", err)
+	}
+	canonical, err := ktav.EmitCanonical(got)
+	if err != nil {
+		t.Fatalf("EmitCanonical: %v", err)
+	}
+	back, err := ktav.Loads(canonical)
+	if err != nil {
+		t.Fatalf("Loads canonical: %v\n---\n%s", err, canonical)
+	}
+	m1 := got.(map[string]any)
+	m2 := back.(map[string]any)
+	if m1["name"] != m2["name"] || m1["count"] != m2["count"] ||
+		m1["ratio"] != m2["ratio"] || m1["flag"] != m2["flag"] {
+		t.Fatalf("round-trip mismatch\ngot=%#v\nback=%#v", m1, m2)
+	}
+	// Calling EmitCanonical twice must be byte-identical.
+	canonical2, err := ktav.EmitCanonical(got)
+	if err != nil {
+		t.Fatalf("EmitCanonical 2: %v", err)
+	}
+	if canonical != canonical2 {
+		t.Fatalf("not deterministic:\nfirst=%q\nsecond=%q", canonical, canonical2)
 	}
 }
 

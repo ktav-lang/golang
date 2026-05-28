@@ -84,7 +84,7 @@ export KTAV_LIB_PATH="$PWD/target/release/libktav_cabi.so"   # Linux
 
 # 3. 运行 conformance 测试时指向 spec submodule。
 git submodule update --init
-export KTAV_SPEC_ROOT="$PWD/spec/versions/0.1/tests"
+export KTAV_SPEC_ROOT="$PWD/spec/versions/0.5/tests"
 ```
 
 ### 测试
@@ -112,8 +112,8 @@ CI 跑同样的命令；push 前本地先过一遍。
 ## 架构说明
 
 - **Wire 格式。** Rust 与 Go 在 FFI 边界用 JSON 交换，用
-  `{"$i":"..."}` / `{"$f":"..."}` 包装类型化 integer / float。
-  保留任意精度以及 encode / decode 时的 `:i` / `:f` 区分。
+  `{"$i":"..."}` / `{"$f":"..."}` 包装 integer / float（spec 0.5：
+  从标量词法形式推断，文本中不再有 `:i`/`:f` 标记）。保留任意精度。
 - **内存所有权。** Rust 分配输出 buffer；Go 拷贝到 slice 后立刻回调
   `ktav_free`。跨 FFI 边界无长期共享内存。
 - **加载器。** `internal/native` 通过 `sync.Once` 在每个进程 dlopen

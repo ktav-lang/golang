@@ -92,7 +92,7 @@ export KTAV_LIB_PATH="$PWD/target/release/libktav_cabi.so"   # Linux
 
 # 3. For conformance tests, point at the spec submodule.
 git submodule update --init
-export KTAV_SPEC_ROOT="$PWD/spec/versions/0.1/tests"
+export KTAV_SPEC_ROOT="$PWD/spec/versions/0.5/tests"
 ```
 
 ### Test
@@ -121,9 +121,9 @@ CI runs the same commands; run them locally before pushing.
 ## Architecture notes
 
 - **Wire format.** Rust and Go exchange JSON over the FFI boundary,
-  with `{"$i":"..."}` / `{"$f":"..."}` wrappers for typed integers /
-  floats. This preserves arbitrary precision and the `:i` vs `:f`
-  distinction through encoding / decoding.
+  with `{"$i":"..."}` / `{"$f":"..."}` wrappers for integers / floats
+  (spec 0.5: inferred from scalar form, no `:i`/`:f` markers in the
+  text). This preserves arbitrary precision through encoding / decoding.
 - **Memory ownership.** Rust allocates the output buffer; Go copies it
   into a Go slice and immediately calls `ktav_free` on the Rust side.
   No buffer is long-lived across the FFI boundary.

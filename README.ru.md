@@ -26,15 +26,15 @@ import (
 
 const src = `
 service: web
-port:i 8080
-ratio:f 0.75
+port: 8080
+ratio: 0.75
 tls: true
 tags: [
     prod
     eu-west-1
 ]
 db.host: primary.internal
-db.timeout:i 30
+db.timeout: 30
 `
 
 type Config struct {
@@ -102,7 +102,9 @@ fmt.Print(out)
 | --- | --- |
 | `Loads(s string) (any, error)` | Разобрать документ Ktav в нативные Go-значения. |
 | `LoadsInto(s string, target any) error` | Разобрать в произвольный `target` (struct, map, …) через `encoding/json`. |
-| `Dumps(v any) (string, error)` | Сериализовать Go-значение в Ktav-текст. Верхний уровень должен быть объектом. |
+| `Dumps(v any) (string, error)` | Сериализовать Go-значение в Ktav-текст. Верхний уровень — объект или массив. |
+| `DumpsForceStrings(v any) (string, error)` | Как `Dumps`, но все leaf-скаляры (integer, float, bool, null) приводятся к String через `::`. |
+| `EmitCanonical(v any) (string, error)` | Канонический Ktav (spec § 5.9 — байт-детерминированный, без inline-соединений). |
 
 ## Соответствие типов
 
@@ -110,16 +112,17 @@ fmt.Print(out)
 | ---------------- | ----------------------------------------------- |
 | `null`           | `nil`                                           |
 | `true` / `false` | `bool`                                          |
-| `:i <digits>`    | `int64` если помещается, иначе `*big.Int`       |
-| `:f <number>`    | `float64`                                       |
-| scalar без маркера | `string`                                      |
+| integer scalar   | `int64` если помещается, иначе `*big.Int`       |
+| float scalar     | `float64`                                       |
+| bare scalar      | `string`                                        |
 | `[ ... ]`        | `[]any`                                         |
 | `{ ... }`        | `map[string]any` (порядок вставки сохраняется)  |
 
-На сериализации Go `int*` / `uint*` / `*big.Int` → `:i`; `float32` /
-`float64` → `:f`; `string` остаётся bare scalar. `NaN` и `±Inf`
-отвергаются. Структуры сначала проходят через `encoding/json`, так что
-теги `json:"..."` учитываются.
+В spec 0.5 integer и float выводятся из лексической формы скалярного тела
+(типизированных маркеров нет). На сериализации Go `int*` / `uint*` /
+`*big.Int` → integer scalar; `float32` / `float64` → float scalar;
+`string` остаётся bare scalar. `NaN` и `±Inf` отвергаются. Структуры
+сначала проходят через `encoding/json`, теги `json:"..."` учитываются.
 
 ## Как резолвится нативная библиотека
 
@@ -143,7 +146,8 @@ fmt.Print(out)
 
 ## Лицензия
 
-MIT — см. [LICENSE](LICENSE).
+MIT OR Apache-2.0 — см. [LICENSE-MIT](LICENSE-MIT) и
+[LICENSE-APACHE](LICENSE-APACHE).
 
 ## Другие реализации Ktav
 
