@@ -158,3 +158,10 @@ ZH). Every prose file lives in three parallel versions — see
 [`ktav-lang/.github/AGENTS.md`](https://github.com/ktav-lang/.github/blob/main/AGENTS.md)
 for the naming convention and the "update all three in one commit"
 rule.
+
+### License of contributions
+
+Unless you explicitly state otherwise, any contribution intentionally
+submitted for inclusion in this project by you, as defined in the
+Apache-2.0 license, shall be dual-licensed as **MIT OR Apache-2.0**,
+without any additional terms or conditions.

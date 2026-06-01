@@ -135,6 +135,19 @@ scalars; `string` stays a bare scalar. `NaN` and `±Inf` are rejected.
 Structs are serialized through `encoding/json` first, so `json:"..."`
 tags are honoured.
 
+## Key escaping
+
+Since spec 0.6.0 a literal `.` or `:` inside a key segment is written
+with a backslash:
+
+```text
+a\.b: v        // key is the single segment "a.b" -> map["a.b"] = "v"
+a\:b: v        // key contains a colon            -> map["a:b"] = "v"
+x.y\.z: v      // split on the first dot only     -> map["x"]["y.z"] = "v"
+```
+
+A literal backslash in a key is `\\`.
+
 ## How the native library is resolved
 
 At first call the Go package resolves `ktav_cabi` in this order:

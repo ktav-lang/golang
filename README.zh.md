@@ -123,6 +123,18 @@ Go `int*` / `uint*` / `*big.Int` → integer scalar；`float32` / `float64`
 → float scalar；`string` 保持裸标量。`NaN` 与 `±Inf` 会被拒绝。结构体先
 走 `encoding/json`，`json:"..."` tag 生效。
 
+## 键的转义
+
+自 spec 0.6.0 起,键段内的字面量 `.` 或 `:` 通过反斜杠书写:
+
+```text
+a\.b: v        // 键是单个段 "a.b"        -> map["a.b"] = "v"
+a\:b: v        // 键中包含冒号            -> map["a:b"] = "v"
+x.y\.z: v      // 只按第一个点切分        -> map["x"]["y.z"] = "v"
+```
+
+键中的字面量反斜杠写作 `\\`。
+
 ## 原生库解析顺序
 
 首次调用时，Go 包按以下顺序查找 `ktav_cabi`：
