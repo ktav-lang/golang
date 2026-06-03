@@ -2,6 +2,8 @@
 
 **Языки:** [English](README.md) · **Русский** · [简体中文](README.zh.md)
 
+**Песочница:** конвертация JSON / YAML / TOML / INI ⇄ Ktav прямо в браузере — **[ktav-lang.github.io](https://ktav-lang.github.io/)**.
+
 Go биндинги для [формата конфигурации Ktav](https://github.com/ktav-lang/spec).
 Тонкая обёртка вокруг референсного Rust-парсера, который грузится в
 рантайме через [`purego`](https://github.com/ebitengine/purego) — поэтому
