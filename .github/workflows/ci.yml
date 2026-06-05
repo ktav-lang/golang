@@ -17,7 +17,7 @@ jobs:
   # ------------------------------------------------------------------
   # Build native library + run Go tests in one job per OS. The test
   # suite hardcodes both paths (cabi at `target/release/...`, spec at
-  # `spec/versions/0.1/tests`) — no env wiring needed.
+  # `spec/versions/0.6/tests`) — no env wiring needed.
   # ------------------------------------------------------------------
   test:
     name: ${{ matrix.os }} / Go ${{ matrix.go }}
