@@ -108,6 +108,7 @@ fmt.Print(out)
 | 函数 | 用途 |
 | --- | --- |
 | `Loads(s string) (any, error)` | 将 Ktav 文档解析为原生 Go 值。 |
+| `LoadsStrict(s string) (any, error)` | 使用严格数字词法检查解析文档，类型映射与 `Loads` 相同。 |
 | `LoadsInto(s string, target any) error` | 通过 `encoding/json` 解析到任意 `target`（struct、map 等）。 |
 | `Dumps(v any) (string, error)` | 将 Go 值渲染为 Ktav 文本。顶层必须为对象或数组。 |
 | `DumpsForceStrings(v any) (string, error)` | 同 `Dumps`，但所有叶标量（integer、float、bool、null）通过 `::` 强制为 String。 |
@@ -132,7 +133,7 @@ Go `int*` / `uint*` / `*big.Int` → integer scalar；`float32` / `float64`
 
 ## 键的转义
 
-自 spec 0.6.0 起,键段内的字面量 `.` 或 `:` 通过反斜杠书写:
+自 spec 0.6.4 起,键段内的字面量 `.` 或 `:` 通过反斜杠书写:
 
 ```text
 a\.b: v        // 键是单个段 "a.b"        -> map["a.b"] = "v"

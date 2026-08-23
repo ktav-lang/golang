@@ -11,6 +11,19 @@ This changelog tracks **binding releases**, not changes to the Ktav format
 itself — for the latter see
 [`ktav-lang/spec`](https://github.com/ktav-lang/spec/blob/main/CHANGELOG.md).
 
+## 0.6.4 — 2026-08-23
+
+### Added
+
+- **`LoadsStrict(s string) (any, error)`** — exposes the Rust strict parser
+  through the Go binding and the `ktav_loads_strict` C ABI symbol.
+
+### Changed
+
+- Tracks `ktav 0.6.4` and spec 0.6.4, including the normative float
+  canonicalisation boundary and the `notation_boundaries` fixture.
+- Native-library resolution now targets the exact `v0.6.4` release asset.
+
 ## [0.6.1] — 2026-06-05
 
 - Docs: rewrite all README examples to spec 0.6 syntax (bare numbers instead of removed `:i`/`:f` markers; `##` comments instead of `#`).

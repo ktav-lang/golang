@@ -55,6 +55,24 @@ db.timeout: 30
 	}
 }
 
+func TestLoadsStrict(t *testing.T) {
+	requireCabi(t)
+	if _, err := ktav.LoadsStrict("version: 1.10\n"); err == nil {
+		t.Fatal("expected strict parser to reject lossy float spelling")
+	}
+	got, err := ktav.LoadsStrict("small: 1e-3\nlarge: 1e10\n")
+	if err != nil {
+		t.Fatalf("LoadsStrict: %v", err)
+	}
+	m, ok := got.(map[string]any)
+	if !ok {
+		t.Fatalf("top is %T", got)
+	}
+	if m["small"] != 0.001 || m["large"] != float64(10000000000) {
+		t.Fatalf("strict values = %#v", m)
+	}
+}
+
 func TestSmokeRoundTrip(t *testing.T) {
 	requireCabi(t)
 	input := map[string]any{

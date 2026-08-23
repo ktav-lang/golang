@@ -108,6 +108,7 @@ fmt.Print(out)
 | Функция | Назначение |
 | --- | --- |
 | `Loads(s string) (any, error)` | Разобрать документ Ktav в нативные Go-значения. |
+| `LoadsStrict(s string) (any, error)` | Разобрать документ в strict-режиме с проверкой канонической записи чисел. |
 | `LoadsInto(s string, target any) error` | Разобрать в произвольный `target` (struct, map, …) через `encoding/json`. |
 | `Dumps(v any) (string, error)` | Сериализовать Go-значение в Ktav-текст. Верхний уровень — объект или массив. |
 | `DumpsForceStrings(v any) (string, error)` | Как `Dumps`, но все leaf-скаляры (integer, float, bool, null) приводятся к String через `::`. |
@@ -133,7 +134,7 @@ fmt.Print(out)
 
 ## Экранирование в ключах
 
-Начиная со spec 0.6.0 литеральные `.` или `:` внутри сегмента ключа
+Начиная со spec 0.6.4 литеральные `.` или `:` внутри сегмента ключа
 записываются через backslash:
 
 ```text

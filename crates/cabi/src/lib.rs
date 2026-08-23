@@ -4,7 +4,7 @@
 //! ## Wire format
 //!
 //! Between Go and Rust we exchange **JSON**, not a custom binary. This
-//! keeps the FFI boundary tiny (four functions) and lets each side use
+//! keeps the FFI boundary tiny and lets each side use
 //! its native JSON machinery.
 //!
 //! Ktav's Integer and Float scalars (spec 0.5, inferred from the scalar
@@ -22,10 +22,11 @@
 //!
 //! ## C ABI
 //!
-//! Six functions, all use the same "caller-owned pointer, callee-owned
+//! Seven functions, all use the same "caller-owned pointer, callee-owned
 //! buffer" pattern:
 //!
 //! - `ktav_loads(src, src_len, out_buf, out_len, out_err) -> i32`
+//! - `ktav_loads_strict(src, src_len, out_buf, out_len, out_err) -> i32`
 //! - `ktav_dumps(src, src_len, out_buf, out_len, out_err) -> i32`
 //! - `ktav_dumps_force_strings(src, src_len, out_buf, out_len, out_err) -> i32`
 //! - `ktav_emit_canonical(src, src_len, out_buf, out_len, out_err) -> i32`
@@ -99,6 +100,59 @@ pub unsafe extern "C" fn ktav_loads(
     };
 
     let value = match ktav::parse(input) {
+        Ok(v) => v,
+        Err(e) => {
+            emit_err(e.to_string(), out_err, out_err_len);
+            return 1;
+        }
+    };
+
+    let json = value_to_json(&value);
+    let bytes = match serde_json::to_vec(&json) {
+        Ok(b) => b,
+        Err(e) => {
+            emit_err(format!("internal: encode JSON: {e}"), out_err, out_err_len);
+            return 1;
+        }
+    };
+
+    emit(bytes, out_buf, out_len);
+    0
+}
+
+/// Parse a Ktav document with strict numeric spelling checks. Returns JSON
+/// bytes on success, error message on failure. Caller frees both via
+/// `ktav_free`.
+///
+/// # Safety
+/// Same as [`ktav_loads`].
+#[no_mangle]
+pub unsafe extern "C" fn ktav_loads_strict(
+    src: *const u8,
+    src_len: usize,
+    out_buf: *mut *mut u8,
+    out_len: *mut usize,
+    out_err: *mut *mut c_char,
+    out_err_len: *mut usize,
+) -> c_int {
+    *out_buf = ptr::null_mut();
+    *out_len = 0;
+    *out_err = ptr::null_mut();
+    *out_err_len = 0;
+
+    let input = match std::str::from_utf8(slice::from_raw_parts(src, src_len)) {
+        Ok(s) => s,
+        Err(e) => {
+            emit_err(
+                format!("input is not valid UTF-8: {e}"),
+                out_err,
+                out_err_len,
+            );
+            return 1;
+        }
+    };
+
+    let value = match ktav::parse_strict(input) {
         Ok(v) => v,
         Err(e) => {
             emit_err(e.to_string(), out_err, out_err_len);

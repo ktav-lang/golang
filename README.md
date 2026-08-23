@@ -117,6 +117,7 @@ A complete runnable version lives in [`examples/basic`](examples/basic/main.go).
 | Function | Purpose |
 | --- | --- |
 | `Loads(s string) (any, error)` | Parse a Ktav document into native Go values. Top-level may be an Object (`map[string]any`) or an Array (`[]any`) per spec § 5.0.1. |
+| `LoadsStrict(s string) (any, error)` | Parse with strict numeric spelling checks, using the same Go type mapping as `Loads`. |
 | `LoadsInto(s string, target any) error` | Parse into an arbitrary `target` (struct, map, …) via `encoding/json`. |
 | `Dumps(v any) (string, error)` | Render a Go value as Ktav text. Top-level must encode to an object or array. |
 | `DumpsForceStrings(v any) (string, error)` | Like `Dumps`, but coerces every leaf scalar (integer, float, bool, null) to a String via the raw `::` marker. Compounds preserve their structure. |
@@ -144,7 +145,7 @@ tags are honoured.
 
 ## Key escaping
 
-Since spec 0.6.0 a literal `.` or `:` inside a key segment is written
+Since spec 0.6.4 a literal `.` or `:` inside a key segment is written
 with a backslash:
 
 ```text

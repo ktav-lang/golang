@@ -76,6 +76,17 @@ func Loads(src string) (any, error) {
 	return decodeJSON(js)
 }
 
+// LoadsStrict parses a Ktav document using the strict parser. Strict mode
+// rejects lossy numeric spellings while preserving the same Go type mapping
+// as Loads.
+func LoadsStrict(src string) (any, error) {
+	js, err := loadsStrictJSON([]byte(src))
+	if err != nil {
+		return nil, err
+	}
+	return decodeJSON(js)
+}
+
 // LoadsInto parses a Ktav document and JSON-unmarshals the tagged
 // intermediate into `target`. Handy for struct-typed configs:
 //
@@ -206,6 +217,14 @@ func loadsJSON(src []byte) ([]byte, error) {
 		return nil, err
 	}
 	return callStringFn(s, s.Loads, src)
+}
+
+func loadsStrictJSON(src []byte) ([]byte, error) {
+	s, err := native.Load()
+	if err != nil {
+		return nil, err
+	}
+	return callStringFn(s, s.LoadsStrict, src)
 }
 
 func dumpsJSON(src []byte) ([]byte, error) {

@@ -19,12 +19,25 @@ const (
 )
 
 func TestMain(m *testing.M) {
-	native.SetLibraryPath(filepath.Join(cabiBuildDir, cabiName()))
+	path := filepath.Join(cabiBuildDir, cabiName())
+	if dir := os.Getenv("CARGO_TARGET_DIR"); dir != "" {
+		path = filepath.Join(dir, "release", cabiName())
+	}
+	if override := os.Getenv("KTAV_LIB_PATH"); override != "" {
+		path = override
+	}
+	native.SetLibraryPath(path)
 	os.Exit(m.Run())
 }
 
 func requireCabi(t *testing.T) {
 	p := filepath.Join(cabiBuildDir, cabiName())
+	if dir := os.Getenv("CARGO_TARGET_DIR"); dir != "" {
+		p = filepath.Join(dir, "release", cabiName())
+	}
+	if override := os.Getenv("KTAV_LIB_PATH"); override != "" {
+		p = override
+	}
 	if _, err := os.Stat(p); err != nil {
 		t.Skipf("cabi not built (%s) — run `cargo build --release -p ktav-cabi`", p)
 	}

@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.6.4 —— 2026-08-23
+
+### 新增
+
+- **`LoadsStrict(s string) (any, error)`** —— 通过 Go binding 和
+  `ktav_loads_strict` C ABI 符号暴露 Rust strict parser。
+
+### 变更
+
+- 跟踪 `ktav 0.6.4` 与 spec 0.6.4，包括规范化 float 边界和
+  `notation_boundaries` fixture。
+- 原生库加载器现在指向精确的 `v0.6.4` release asset。
+
 **语言:** [English](CHANGELOG.md) · [Русский](CHANGELOG.ru.md) · **简体中文**
 
 本文档记录 Go 绑定的所有重要变更。格式基于
