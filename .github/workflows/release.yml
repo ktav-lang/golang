@@ -36,13 +36,13 @@ jobs:
             artifact: libktav_cabi.so
             use-zigbuild: true
 
-          - os: macos-latest
+          - os: macos-15
             target: x86_64-apple-darwin
             asset: libktav_cabi-darwin-amd64.dylib
             artifact: libktav_cabi.dylib
             use-zigbuild: false
 
-          - os: macos-latest
+          - os: macos-15
             target: aarch64-apple-darwin
             asset: libktav_cabi-darwin-arm64.dylib
             artifact: libktav_cabi.dylib

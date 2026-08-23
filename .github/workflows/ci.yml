@@ -25,7 +25,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        # macos-latest moved to macOS 26 in 2026. Go 1.21-1.23 test
+        # binaries abort there with a missing LC_UUID load command;
+        # macos-15 remains the compatible runner until those toolchains
+        # gain the macOS 26 linker fix.
+        os: [ubuntu-latest, macos-15, windows-latest]
         go: ["1.21", "1.22", "1.23"]
 
     steps:
