@@ -37,6 +37,9 @@
 // (i.e. a []any or any other JSON-encodable slice). Top-level Arrays
 // render as bare item-per-line — no surrounding `[...]` brackets, per
 // spec § 5.0.1.
+//
+// [FormatSource] reformats Ktav source text (comments preserved,
+// fixed point); [CanonicalFromSource] re-emits it canonically.
 package ktav
 
 import (
@@ -45,6 +48,7 @@ import (
 	"math/big"
 	"runtime"
 	"strconv"
+	"strings"
 	"unsafe"
 
 	"github.com/ebitengine/purego"
@@ -52,11 +56,29 @@ import (
 	"github.com/ktav-lang/golang/internal/native"
 )
 
-// Error is the binding's error type. Returned from every Loads / Dumps
-// failure — both Rust-side parse/render errors and Go-side decode bugs
-// (malformed tagged JSON, bad integer literal, etc.) — so callers can
-// match all ktav failures with one `errors.As`.
-type Error struct{ Msg string }
+// Error is the binding's error type, carrying the native ktav error
+// envelope's nine fields as first-class members. A zero value ("" / 0 /
+// nil) corresponds to an explicit JSON null in the envelope. Msg is a
+// human-readable reconstruction — never the raw envelope JSON.
+type Error struct {
+	Msg         string
+	Class       string // envelope "error": ktav::Error variant name
+	Reason      string // machine-readable reason code ("" when null)
+	Line        int    // 1-based source line; 0 when the envelope has null
+	LineText    string
+	Span        *Span
+	Path        []string // exact decoded key segments, never a joined string
+	Body        string
+	Canonical   string
+	SpecSection string
+}
+
+// Span is a byte-offset range into the source document carried by the
+// structured error envelope.
+type Span struct {
+	Start int `json:"start"`
+	End   int `json:"end"`
+}
 
 func (e *Error) Error() string { return e.Msg }
 
@@ -193,6 +215,22 @@ func EmitCanonical(v any) (string, error) {
 	return string(out), nil
 }
 
+// FormatSource formats Ktav source text into its normalised spelling,
+// preserving every comment verbatim (spec § 3.4: a comment owns a whole
+// line). Blank lines survive as a grouping hint, but a run of two or
+// more collapses to exactly one and blank padding immediately inside a
+// bracket is dropped, so formatting is a fixed point:
+// FormatSource(FormatSource(x)) == FormatSource(x). Key order is never
+// changed (spec § 5.9). For a document with no comments and no blank
+// lines, the result equals CanonicalFromSource of the same text.
+func FormatSource(src string) (string, error) {
+	out, err := formatSource([]byte(src))
+	if err != nil {
+		return "", err
+	}
+	return string(out), nil
+}
+
 // CanonicalFromSource parses a Ktav document and immediately emits it
 // in canonical form (spec § 5.9), preserving the source's insertion
 // order of object keys. This is equivalent to `ktav parse | ktav
@@ -251,6 +289,14 @@ func emitCanonicalJSON(src []byte) ([]byte, error) {
 	return callStringFn(s, s.EmitCanonical, src)
 }
 
+func formatSource(src []byte) ([]byte, error) {
+	s, err := native.Load()
+	if err != nil {
+		return nil, err
+	}
+	return callStringFn(s, s.Format, src)
+}
+
 // callStringFn invokes a C ABI function with signature
 //
 //	int fn(const u8 *src, usize src_len,
@@ -285,12 +331,12 @@ func callStringFn(s *native.Syms, fn uintptr, src []byte) ([]byte, error) {
 	runtime.KeepAlive(src)
 
 	if rc != 0 {
-		msg := "ktav: unknown error"
+		raw := "ktav: unknown error"
 		if outErr != 0 && outErrLen != 0 {
-			msg = string(copyFromC(outErr, outErrLen))
+			raw = string(copyFromC(outErr, outErrLen))
 			purego.SyscallN(s.Free, outErr, outErrLen)
 		}
-		return nil, &Error{Msg: msg}
+		return nil, errorFromEnvelope([]byte(raw))
 	}
 
 	var out []byte
@@ -299,6 +345,98 @@ func callStringFn(s *native.Syms, fn uintptr, src []byte) ([]byte, error) {
 		purego.SyscallN(s.Free, outBuf, outLen)
 	}
 	return out, nil
+}
+
+// envelopeJSON is the wire shape of the native error envelope
+// (ktav::ErrorEnvelope::to_json): one JSON object, nine fields in
+// order, absent info as explicit null. Nullable fields are pointers
+// here so a JSON null maps to nil rather than a zero value.
+type envelopeJSON struct {
+	Error       *string   `json:"error"`
+	Reason      *string   `json:"reason"`
+	Line        *uint32   `json:"line"`
+	LineText    *string   `json:"line_text"`
+	Span        *Span     `json:"span"`
+	Path        *[]string `json:"path"`
+	Body        *string   `json:"body"`
+	Canonical   *string   `json:"canonical"`
+	SpecSection *string   `json:"spec_section"`
+}
+
+// errorFromEnvelope parses the native error payload as the structured
+// envelope JSON and reconstructs a human-readable Msg. If the bytes do
+// not parse as a JSON object with a string `error` field (e.g. a stale
+// pre-envelope native library still emitting plain message strings),
+// it falls back to a Msg-only Error carrying the raw text.
+func errorFromEnvelope(raw []byte) *Error {
+	var env envelopeJSON
+	if err := json.Unmarshal(raw, &env); err != nil || env.Error == nil {
+		// Stale native library: error text is not envelope JSON.
+		return &Error{Msg: string(raw)}
+	}
+	e := &Error{
+		Class: *env.Error,
+		Span:  env.Span,
+	}
+	if env.Reason != nil {
+		e.Reason = *env.Reason
+	}
+	if env.Line != nil {
+		e.Line = int(*env.Line)
+	}
+	if env.LineText != nil {
+		e.LineText = *env.LineText
+	}
+	if env.Path != nil {
+		e.Path = *env.Path
+	}
+	if env.Body != nil {
+		e.Body = *env.Body
+	}
+	if env.Canonical != nil {
+		e.Canonical = *env.Canonical
+	}
+	if env.SpecSection != nil {
+		e.SpecSection = *env.SpecSection
+	}
+	e.Msg = e.reconstructMessage()
+	return e
+}
+
+// reconstructMessage renders the envelope as
+//
+//	ktav: <Class>[ <Reason>][ at line N][ (path "a"."b.c")]: <Body>
+//
+// omitting empty parts (and the trailing colon when Body is empty).
+// Fragments conformance tests match on — reason codes like
+// EmptyKeyName and Body text like "object or array" — survive here.
+func (e *Error) reconstructMessage() string {
+	var b strings.Builder
+	b.WriteString("ktav: ")
+	b.WriteString(e.Class)
+	if e.Reason != "" {
+		b.WriteByte(' ')
+		b.WriteString(e.Reason)
+	}
+	if e.Line > 0 {
+		b.WriteString(" at line ")
+		b.WriteString(strconv.Itoa(e.Line))
+	}
+	if len(e.Path) > 0 {
+		b.WriteString(" (path ")
+		for i, seg := range e.Path {
+			if i > 0 {
+				b.WriteByte('.')
+			}
+			b.WriteString(strconv.Quote(seg))
+		}
+		b.WriteByte(')')
+	}
+	if e.Body != "" {
+		b.WriteString(": ")
+		b.WriteString(e.Body)
+	}
+	return b.String()
 }
 
 func copyFromC(ptr, n uintptr) []byte {

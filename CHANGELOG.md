@@ -13,15 +13,36 @@ itself — for the latter see
 
 ## Unreleased
 
+### Added
+
+- **`FormatSource(s string) (string, error)`** — the new `ktav_format`
+  C ABI symbol, exposed as a comment-preserving formatter over Ktav
+  source text. Every comment survives verbatim (spec § 3.4: a comment
+  owns a whole line); blank lines survive as a grouping hint, but a
+  run of two or more collapses to exactly one and blank padding
+  immediately inside a bracket is dropped, so formatting is a fixed
+  point: `FormatSource(FormatSource(x)) == FormatSource(x)`. Key order
+  is never changed (spec § 5.9); for a document with no comments and
+  no blank lines the output equals `CanonicalFromSource` of the same
+  text.
+
 ### Changed
 
-- Tracks `ktav 0.7` and spec **0.7.0** (spec submodule pinned to
-  `v0.7.0`). `rust-version` raised to 1.71 (ktav 0.7 MSRV); the binding's
-  own version is unchanged. The Go API is unchanged — quoted key segments
-  (spec 0.7 § 5.3.3) and `\uXXXX` escapes (§ 3.7.1) arrive through the
-  Rust core, and Rust errors still cross the C ABI as generic message
-  strings, so the new 0.7 error kinds (§§ 6.11–6.16) need no new
-  Go-side surface.
+- Tracks `ktav 0.7.1` and spec **0.7.0** (spec submodule pinned to
+  `v0.7.0`); the dependency floor is raised from `0.7` and the
+  binding's own version is unchanged. The Go API is otherwise
+  unchanged — quoted key segments (spec 0.7 § 5.3.3) and `\uXXXX`
+  escapes (§ 3.7.1) arrive through the Rust core, so the new 0.7 error
+  kinds (§§ 6.11–6.16) need no new Go-side surface.
+- **Breaking:** the error channel now surfaces the structured ktav
+  error envelope. `ktav.Error` carries the envelope's nine fields as
+  first-class members — `Class`, `Reason`, `Line`, `LineText`, `Span`,
+  `Path` (exact decoded key segments, never a joined string), `Body`,
+  `Canonical`, `SpecSection` — and `Error()` text is reconstructed
+  from them (`ktav: <Class>[ <Reason>][ at line N][ (path "a"."b.c")]:
+  <Body>`). Surface error text therefore changes; matching on raw
+  message strings is not stable across this boundary. Intended
+  change.
 - The conformance runner reads `spec/versions/0.7/tests` and now executes
   the two refuse categories 0.7 adds: `unrepresentable/` (a JSON value
   the writer must refuse — asserted on both `Dumps` and `EmitCanonical`)

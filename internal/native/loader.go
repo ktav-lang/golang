@@ -37,6 +37,7 @@ type Syms struct {
 	Dumps             uintptr
 	DumpsForceStrings uintptr
 	EmitCanonical     uintptr
+	Format            uintptr
 	Free              uintptr
 	Version           uintptr
 }
@@ -90,6 +91,10 @@ func Load() (*Syms, error) {
 			return
 		}
 		if err := bindSym(handle, "ktav_emit_canonical", &s.EmitCanonical); err != nil {
+			loadErr = err
+			return
+		}
+		if err := bindSym(handle, "ktav_format", &s.Format); err != nil {
 			loadErr = err
 			return
 		}
