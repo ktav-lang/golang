@@ -2,6 +2,8 @@ package ktav_test
 
 import (
 	"encoding/json"
+	"errors"
+	"math"
 	"math/big"
 	"os"
 	"path/filepath"
@@ -221,6 +223,176 @@ func TestConformanceInvalid(t *testing.T) {
 			}
 			if _, err := ktav.Loads(string(src)); err == nil {
 				t.Fatalf("expected parse error, got ok\n---\n%s", src)
+			}
+		})
+	}
+}
+
+// decodeUnrepJSON reads one of the unrepresentable-fixture oracles and
+// returns (value, reason). The fixture-specific one-key {"$float":
+// "NaN"|"Infinity"|"-Infinity"} marker becomes a non-finite Go float64.
+func decodeUnrepJSON(raw []byte) (any, string, error) {
+	dec := json.NewDecoder(strings.NewReader(string(raw)))
+	dec.UseNumber()
+	var doc struct {
+		Value                 any    `json:"value"`
+		UnrepresentableReason string `json:"unrepresentable_reason"`
+	}
+	if err := dec.Decode(&doc); err != nil {
+		return nil, "", err
+	}
+	return liftMarker(doc.Value), doc.UnrepresentableReason, nil
+}
+
+// liftMarker substitutes the {"$float": ...} marker, then lifts the rest
+// of the tree exactly like liftOracle.
+func liftMarker(v any) any {
+	if m, ok := v.(map[string]any); ok && len(m) == 1 {
+		if s, ok := m["$float"].(string); ok {
+			switch s {
+			case "NaN":
+				return math.NaN()
+			case "Infinity":
+				return math.Inf(1)
+			case "-Infinity":
+				return math.Inf(-1)
+			}
+		}
+	}
+	switch t := v.(type) {
+	case map[string]any:
+		for k, x := range t {
+			t[k] = liftMarker(x)
+		}
+		return t
+	case []any:
+		for i, x := range t {
+			t[i] = liftMarker(x)
+		}
+		return t
+	case json.Number:
+		return liftOracle(t)
+	default:
+		return v
+	}
+}
+
+// TestConformanceUnrepresentable walks spec 0.7's unrepresentable/
+// category: JSON values a conforming WRITER must refuse. The binding
+// must reject them on both writer entry points (Dumps and
+// EmitCanonical) with a *ktav.Error.
+func TestConformanceUnrepresentable(t *testing.T) {
+	requireCabi(t)
+	specRoot := requireSpec(t)
+
+	var cases []string
+	err := filepath.Walk(filepath.Join(specRoot, "unrepresentable"), func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if !info.IsDir() && strings.HasSuffix(path, ".json") {
+			cases = append(cases, path)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("walk: %v", err)
+	}
+	if len(cases) == 0 {
+		t.Fatal("no unrepresentable fixtures found")
+	}
+
+	for _, p := range cases {
+		name := strings.TrimPrefix(p, specRoot+string(filepath.Separator))
+		t.Run(name, func(t *testing.T) {
+			raw, err := os.ReadFile(p)
+			if err != nil {
+				t.Fatal(err)
+			}
+			value, reason, err := decodeUnrepJSON(raw)
+			if err != nil {
+				t.Fatalf("oracle decode: %v", err)
+			}
+
+			for _, call := range []struct {
+				label string
+				fn    func() (string, error)
+			}{
+				{"Dumps", func() (string, error) { return ktav.Dumps(value) }},
+				{"EmitCanonical", func() (string, error) { return ktav.EmitCanonical(value) }},
+			} {
+				out, err := call.fn()
+				if err == nil {
+					t.Fatalf("%s: expected writer to refuse value (reason %s), got ok:\n%s", call.label, reason, out)
+				}
+				var ktavErr *ktav.Error
+				if !errors.As(err, &ktavErr) {
+					t.Fatalf("%s: not *ktav.Error: %T (%v)", call.label, err, err)
+				}
+				t.Logf("%s refused (reason %s): %v", call.label, reason, err)
+			}
+		})
+	}
+}
+
+// TestConformanceParseableUnrepresentable walks spec 0.7's
+// parseable-unrepresentable/ category: documents the parser accepts but
+// no canonical writer may emit. Loads must succeed and match the
+// oracle value; CanonicalFromSource must refuse with a *ktav.Error.
+func TestConformanceParseableUnrepresentable(t *testing.T) {
+	requireCabi(t)
+	specRoot := requireSpec(t)
+
+	var cases []string
+	err := filepath.Walk(filepath.Join(specRoot, "parseable-unrepresentable"), func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if !info.IsDir() && strings.HasSuffix(path, ".ktav") &&
+			!strings.HasSuffix(path, ".canonical.ktav") {
+			cases = append(cases, path)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("walk: %v", err)
+	}
+	if len(cases) == 0 {
+		t.Fatal("no parseable-unrepresentable fixtures found")
+	}
+
+	for _, p := range cases {
+		name := strings.TrimPrefix(p, specRoot+string(filepath.Separator))
+		t.Run(name, func(t *testing.T) {
+			src, err := os.ReadFile(p)
+			if err != nil {
+				t.Fatal(err)
+			}
+			oracleRaw, err := os.ReadFile(strings.TrimSuffix(p, ".ktav") + ".json")
+			if err != nil {
+				t.Fatalf("oracle missing: %v", err)
+			}
+			want, reason, err := decodeUnrepJSON(oracleRaw)
+			if err != nil {
+				t.Fatalf("oracle decode: %v", err)
+			}
+
+			got, err := ktav.Loads(string(src))
+			if err != nil {
+				t.Fatalf("Loads: %v\n--- input ---\n%s", err, src)
+			}
+			if !structEqual(got, want) {
+				t.Fatalf("mismatch\nktav src:\n%s\nktav got: %#v\noracle:   %#v", src, got, want)
+			}
+
+			if _, err := ktav.CanonicalFromSource(string(src)); err == nil {
+				t.Fatalf("expected canonical emit to refuse (reason %s)\n--- input ---\n%s", reason, src)
+			} else {
+				var ktavErr *ktav.Error
+				if !errors.As(err, &ktavErr) {
+					t.Fatalf("not *ktav.Error: %T (%v)", err, err)
+				}
+				t.Logf("canonical emit refused (reason %s): %v", reason, err)
 			}
 		})
 	}

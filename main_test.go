@@ -15,7 +15,7 @@ import (
 // build into the same workspace.
 const (
 	cabiBuildDir = "target/release"
-	specTestsDir = "spec/versions/0.6/tests"
+	specTestsDir = "spec/versions/0.7/tests"
 )
 
 func TestMain(m *testing.M) {
