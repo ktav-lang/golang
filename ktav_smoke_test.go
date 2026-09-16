@@ -326,3 +326,117 @@ func TestDumpsForceStringsTopLevelArray(t *testing.T) {
 		t.Fatalf("got %#v, want %#v", arr, want)
 	}
 }
+
+func TestSmokeQuotedKeys(t *testing.T) {
+	requireCabi(t)
+	// Spec 0.7 § 5.3.3: a key segment may be quoted with " ' or `;
+	// quoting is syntactic only — the decoded key is the content
+	// between the delimiters, untrimmed, and structural bytes inside
+	// need no escaping. `a."b.c".d: 1` is the three-segment path
+	// a → "b.c" → d.
+	src := "a.\"b.c\".d: 1\n" +
+		"\" a \": 2\n" +
+		"`it's \"quoted\"`: 3\n"
+	got, err := ktav.Loads(src)
+	if err != nil {
+		t.Fatalf("Loads: %v", err)
+	}
+	m, ok := got.(map[string]any)
+	if !ok {
+		t.Fatalf("top is %T", got)
+	}
+	a, ok := m["a"].(map[string]any)
+	if !ok {
+		t.Fatalf("a is %T, want nested map (dotted path)", m["a"])
+	}
+	dotted, ok := a["b.c"].(map[string]any)
+	if !ok {
+		t.Fatalf(`a["b.c"] is %T, want nested map (quoted middle segment)`, a["b.c"])
+	}
+	if dotted["d"] != int64(1) {
+		t.Fatalf("d = %v (%T)", dotted["d"], dotted["d"])
+	}
+	if m[" a "] != int64(2) {
+		t.Fatalf("quoted segment must keep inner whitespace: %#v (%T)", m[" a "], m[" a "])
+	}
+	if m[`it's "quoted"`] != int64(3) {
+		t.Fatalf("backtick segment = %#v", m[`it's "quoted"`])
+	}
+
+	// Value-position quotes stay ordinary content (§ 5.3.3 first
+	// bullet): `note: "b"` is the three-character String "b", and a
+	// round-trip through Dumps preserves that.
+	got2, err := ktav.Loads("note: \"b\"\n")
+	if err != nil {
+		t.Fatalf("Loads note: %v", err)
+	}
+	if got2.(map[string]any)["note"] != "\"b\"" {
+		t.Fatalf("value-position quotes must be content: %#v", got2)
+	}
+	out, err := ktav.Dumps(got)
+	if err != nil {
+		t.Fatalf("Dumps: %v", err)
+	}
+	back, err := ktav.Loads(out)
+	if err != nil {
+		t.Fatalf("Loads back: %v\n---\n%s", err, out)
+	}
+	if !reflect.DeepEqual(back, got) {
+		t.Fatalf("quoted-key round-trip mismatch\nwant %#v\ngot  %#v\n---\n%s", got, back, out)
+	}
+}
+
+func TestSmokeUnicodeEscape(t *testing.T) {
+	requireCabi(t)
+	// Spec 0.7 § 3.7.1: \uXXXX (exactly four hex digits, parsed
+	// case-insensitively) is recognised in inline scalar values inside
+	// an inline compound (§ 5.8 — comma-separated) and in keys, but NOT
+	// in whole-line scalar values, where the bytes stay literal.
+	src := "doc: { snow: \\u2744, lower: \\u2744, emoji: \\ud83d\\ude00, a1: \\u00411 }\n" +
+		"plain: \\u2744\n"
+	got, err := ktav.Loads(src)
+	if err != nil {
+		t.Fatalf("Loads: %v", err)
+	}
+	m := got.(map[string]any)
+	doc, ok := m["doc"].(map[string]any)
+	if !ok {
+		t.Fatalf("doc is %T, want inline object", m["doc"])
+	}
+	if doc["snow"] != "❄" {
+		t.Fatalf("snow = %#v, want ❄", doc["snow"])
+	}
+	if doc["lower"] != "❄" {
+		t.Fatalf("lower = %#v, want ❄ (case-insensitive hex)", doc["lower"])
+	}
+	if doc["emoji"] != "\U0001F600" {
+		t.Fatalf("emoji = %#v, want U+1F600 grin (surrogate pair)", doc["emoji"])
+	}
+	// Exactly four digits are consumed: \u0041 followed by a literal
+	// '1' is A then 1 — two characters, not a five-digit escape.
+	if doc["a1"] != "A1" {
+		t.Fatalf("a1 = %#v, want \"A1\"", doc["a1"])
+	}
+	// Outside an inline compound there is no escape processing: the
+	// whole-line value stays the literal six characters (§ 3.7).
+	if m["plain"] != "\\u2744" {
+		t.Fatalf("plain = %#v, want literal \\u2744 (no escapes in whole-line values)", m["plain"])
+	}
+
+	// The writer emits UTF-8 directly (§ 3.7.1: no obligation to
+	// escape), so the round-trip preserves the decoded strings.
+	out, err := ktav.Dumps(got)
+	if err != nil {
+		t.Fatalf("Dumps: %v", err)
+	}
+	if !strings.Contains(out, "❄") || !strings.Contains(out, "\U0001F600") {
+		t.Fatalf("writer should emit raw UTF-8, got:\n%s", out)
+	}
+	back, err := ktav.Loads(out)
+	if err != nil {
+		t.Fatalf("Loads back: %v\n---\n%s", err, out)
+	}
+	if !reflect.DeepEqual(back, got) {
+		t.Fatalf("unicode round-trip mismatch\nwant %#v\ngot  %#v\n---\n%s", got, back, out)
+	}
+}
