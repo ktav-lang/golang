@@ -228,6 +228,25 @@ func TestConformanceInvalid(t *testing.T) {
 	}
 }
 
+// reasonFragment maps a fixture's unrepresentable_reason to the message
+// fragment the binding is required to surface. Rust-side rejections
+// carry the spec ErrorKind name verbatim; NonFiniteFloat and ScalarRoot
+// are rejected in Go (ktav.go floatTag) and at the C ABI (top-level
+// shape check) with this binding's own wording. Reasons not yet mapped
+// keep only the generic refuse assertions.
+func reasonFragment(reason string) (string, bool) {
+	switch reason {
+	case "EmptyKeyName":
+		return "EmptyKeyName", true
+	case "NonFiniteFloat":
+		return "NaN / Inf", true
+	case "ScalarRoot":
+		return "object or array", true
+	default:
+		return "", false
+	}
+}
+
 // decodeUnrepJSON reads one of the unrepresentable-fixture oracles and
 // returns (value, reason). The fixture-specific one-key {"$float":
 // "NaN"|"Infinity"|"-Infinity"} marker becomes a non-finite Go float64.
@@ -329,6 +348,11 @@ func TestConformanceUnrepresentable(t *testing.T) {
 				if !errors.As(err, &ktavErr) {
 					t.Fatalf("%s: not *ktav.Error: %T (%v)", call.label, err, err)
 				}
+				if fragment, known := reasonFragment(reason); known {
+					if !strings.Contains(err.Error(), fragment) {
+						t.Fatalf("%s: error %q does not mention %s (expected fragment %q)", call.label, err, reason, fragment)
+					}
+				}
 				t.Logf("%s refused (reason %s): %v", call.label, reason, err)
 			}
 		})
@@ -391,6 +415,9 @@ func TestConformanceParseableUnrepresentable(t *testing.T) {
 				var ktavErr *ktav.Error
 				if !errors.As(err, &ktavErr) {
 					t.Fatalf("not *ktav.Error: %T (%v)", err, err)
+				}
+				if !strings.Contains(err.Error(), reason) {
+					t.Fatalf("canonical emit error %q does not mention reason %s", err, reason)
 				}
 				t.Logf("canonical emit refused (reason %s): %v", reason, err)
 			}
