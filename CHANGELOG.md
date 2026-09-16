@@ -11,6 +11,23 @@ This changelog tracks **binding releases**, not changes to the Ktav format
 itself — for the latter see
 [`ktav-lang/spec`](https://github.com/ktav-lang/spec/blob/main/CHANGELOG.md).
 
+## Unreleased
+
+### Changed
+
+- Tracks `ktav 0.7` and spec **0.7.0** (spec submodule pinned to
+  `v0.7.0`). `rust-version` raised to 1.71 (ktav 0.7 MSRV); the binding's
+  own version is unchanged. The Go API is unchanged — quoted key segments
+  (spec 0.7 § 5.3.3) and `\uXXXX` escapes (§ 3.7.1) arrive through the
+  Rust core, and Rust errors still cross the C ABI as generic message
+  strings, so the new 0.7 error kinds (§§ 6.11–6.16) need no new
+  Go-side surface.
+- The conformance runner reads `spec/versions/0.7/tests` and now executes
+  the two refuse categories 0.7 adds: `unrepresentable/` (a JSON value
+  the writer must refuse — asserted on both `Dumps` and `EmitCanonical`)
+  and `parseable-unrepresentable/` (`Loads` must match the oracle value,
+  canonical emit must refuse), each with per-case reason assertions.
+
 ## 0.6.4 — 2026-08-23
 
 ### Added
