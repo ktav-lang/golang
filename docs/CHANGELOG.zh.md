@@ -13,7 +13,7 @@
   `notation_boundaries` fixture。
 - 原生库加载器现在指向精确的 `v0.6.4` release asset。
 
-**语言:** [English](CHANGELOG.md) · [Русский](CHANGELOG.ru.md) · **简体中文**
+**语言:** [English](../CHANGELOG.md) · [Русский](CHANGELOG.ru.md) · **简体中文**
 
 本文档记录 Go 绑定的所有重要变更。格式基于
 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/);版本采用

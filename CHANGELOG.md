@@ -1,6 +1,6 @@
 # Changelog
 
-**Languages:** **English** · [Русский](CHANGELOG.ru.md) · [简体中文](CHANGELOG.zh.md)
+**Languages:** **English** · [Русский](docs/CHANGELOG.ru.md) · [简体中文](docs/CHANGELOG.zh.md)
 
 All notable changes to the Go binding are tracked here. Format based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow

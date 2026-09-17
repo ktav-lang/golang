@@ -2,7 +2,7 @@
 
 Minimal programs that exercise the public Go API. Run any of them with
 the Rust-built native library pointed to via `KTAV_LIB_PATH` (see
-[CONTRIBUTING](../CONTRIBUTING.md#build)):
+[CONTRIBUTING](../docs/CONTRIBUTING.md#build)):
 
 ```bash
 cargo build --release -p ktav-cabi

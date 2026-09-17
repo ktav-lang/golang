@@ -1,6 +1,6 @@
 # Changelog
 
-**Языки:** [English](CHANGELOG.md) · **Русский** · [简体中文](CHANGELOG.zh.md)
+**Языки:** [English](../CHANGELOG.md) · **Русский** · [简体中文](CHANGELOG.zh.md)
 
 Все значимые изменения Go-биндинга документируются здесь. Формат основан
 на [Keep a Changelog](https://keepachangelog.com/ru/1.1.0/);
