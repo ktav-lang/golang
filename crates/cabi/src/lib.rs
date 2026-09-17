@@ -228,9 +228,8 @@ pub unsafe extern "C" fn ktav_dumps(
     };
 
     if !matches!(value, Value::Object(_) | Value::Array(_)) {
-        let err = ktav::Error::Message(
-            "top-level Ktav document must be an object or array".to_string(),
-        );
+        let err =
+            ktav::Error::Message("top-level Ktav document must be an object or array".to_string());
         emit_err(envelope_json(&err, ""), out_err, out_err_len);
         return 1;
     }
@@ -289,9 +288,8 @@ pub unsafe extern "C" fn ktav_dumps_force_strings(
     };
 
     if !matches!(value, Value::Object(_) | Value::Array(_)) {
-        let err = ktav::Error::Message(
-            "top-level Ktav document must be an object or array".to_string(),
-        );
+        let err =
+            ktav::Error::Message("top-level Ktav document must be an object or array".to_string());
         emit_err(envelope_json(&err, ""), out_err, out_err_len);
         return 1;
     }
@@ -349,9 +347,8 @@ pub unsafe extern "C" fn ktav_emit_canonical(
     };
 
     if !matches!(value, Value::Object(_) | Value::Array(_)) {
-        let err = ktav::Error::Message(
-            "top-level Ktav document must be an object or array".to_string(),
-        );
+        let err =
+            ktav::Error::Message("top-level Ktav document must be an object or array".to_string());
         emit_err(envelope_json(&err, ""), out_err, out_err_len);
         return 1;
     }
@@ -712,12 +709,10 @@ list:
         );
         assert_eq!(v["error"], "Message");
         assert!(v["body"].is_string());
-        assert!(
-            v["body"]
-                .as_str()
-                .unwrap()
-                .starts_with("input is not valid UTF-8")
-        );
+        assert!(v["body"]
+            .as_str()
+            .unwrap()
+            .starts_with("input is not valid UTF-8"));
 
         // Parse failure path against valid UTF-8 source.
         let (rc, err) = unsafe { call_format(b"a: [") };
