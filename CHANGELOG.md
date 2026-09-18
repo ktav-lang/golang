@@ -35,13 +35,14 @@ itself — for the latter see
   escapes (§ 3.7.1) arrive through the Rust core, so the new 0.7 error
   kinds (§§ 6.11–6.16) need no new Go-side surface.
 - **Breaking:** the error channel now surfaces the structured ktav
-  error envelope. `ktav.Error` carries the envelope's nine fields as
+  error envelope. `ktav.Error` carries the envelope's fields as
   first-class members — `Class`, `Reason`, `Line`, `LineText`, `Span`,
   `Path` (exact decoded key segments, never a joined string), `Body`,
-  `Canonical`, `SpecSection` — and `Error()` text is reconstructed
-  from them (`ktav: <Class>[ <Reason>][ at line N][ (path "a"."b.c")]:
-  <Body>`). Surface error text therefore changes; matching on raw
-  message strings is not stable across this boundary. Intended
+  `Canonical`, `SpecSection` — plus `Msg`, which `Error()` returns.
+  `Msg` is the core's own rendering, taken verbatim rather than
+  reassembled here, so the same document produces the same error text
+  in every Ktav binding. Surface error text therefore changes; matching
+  on raw message strings is not stable across this boundary. Intended
   change.
 - The conformance runner reads `spec/versions/0.7/tests` and now executes
   the two refuse categories 0.7 adds: `unrepresentable/` (a JSON value

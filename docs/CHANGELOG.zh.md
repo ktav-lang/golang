@@ -1,5 +1,39 @@
 # Changelog
 
+## 未发布
+
+### 新增
+
+- **`FormatSource(s string) (string, error)`** —— 新的 C ABI 符号
+  `ktav_format`,作为保留注释的 Ktav 源文本格式化器对外开放。每条注释
+  都逐字保留(spec § 3.4:注释独占一整行);空行作为分组提示保留,但
+  连续两行及以上会合并为恰好一行,紧贴括号内侧的空行填充会被丢弃,
+  因此格式化是一个不动点:
+  `FormatSource(FormatSource(x)) == FormatSource(x)`。键顺序绝不改变
+  (spec § 5.9);对于没有注释也没有空行的文档,输出等同于同一文本的
+  `CanonicalFromSource`。
+
+### 变更
+
+- 跟随 `ktav 0.7.1` 与 spec **0.7.0**(spec 子模块固定在 `v0.7.0`);
+  依赖下限从 `0.7` 提高,绑定自身的版本未变。Go API 其余部分不变 ——
+  quoted 键段(spec 0.7 § 5.3.3)与 `\uXXXX` escape(§ 3.7.1)经由
+  Rust 核心到达,因此 0.7 新增的错误类别(§§ 6.11–6.16)不需要新的
+  Go 侧接口。
+- **破坏性:** 错误通道现在呈现结构化的 ktav 错误信封。`ktav.Error`
+  以一等成员携带信封字段 —— `Class`、`Reason`、`Line`、`LineText`、
+  `Span`、`Path`(精确解码后的键段,绝不是拼接字符串)、`Body`、
+  `Canonical`、`SpecSection` —— 外加 `Msg`,`Error()` 返回的正是它。
+  `Msg` 是核心自身的渲染文本,逐字取得而非在此处重新拼装,因此同一
+  份文档在任何 Ktav 绑定中都产生相同的错误文本。对外的错误文本因此
+  发生变化;跨越这一边界去匹配原始消息字符串并不稳定。此变更是有意
+  为之。
+- Conformance 运行器读取 `spec/versions/0.7/tests`,并开始执行 0.7 新增
+  的两个拒绝类别:`unrepresentable/`(writer 必须拒绝的 JSON 值 ——
+  对 `Dumps` 与 `EmitCanonical` 都作断言)与
+  `parseable-unrepresentable/`(`Loads` 必须与 oracle 值一致,规范输出
+  必须拒绝),二者都逐例断言原因码。
+
 ## 0.6.4 —— 2026-08-23
 
 ### 新增

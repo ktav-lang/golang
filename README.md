@@ -123,6 +123,84 @@ A complete runnable version lives in [`examples/basic`](examples/basic/main.go).
 | `DumpsForceStrings(v any) (string, error)` | Like `Dumps`, but coerces every leaf scalar (integer, float, bool, null) to a String via the raw `::` marker. Compounds preserve their structure. |
 | `EmitCanonical(v any) (string, error)` | Render a Go value as canonical Ktav (spec § 5.9). Key order follows Go map iteration (alphabetical for `map[string]any`). |
 | `CanonicalFromSource(src string) (string, error)` | Parse Ktav and immediately emit canonical form, preserving source key order. |
+| `FormatSource(src string) (string, error)` | Format Ktav source into its normalised spelling, **keeping every comment**. See below. |
+
+## Formatting — canonical spelling, comments kept
+
+`FormatSource` and `EmitCanonical` are different operations and it is
+worth being clear which you want:
+
+- **`EmitCanonical`** takes a Go value and writes the canonical form.
+  Trivia does not exist in a value, so none survives.
+- **`FormatSource`** takes source *text* and rewrites its spelling while
+  **preserving every comment verbatim** (spec § 3.4: a comment owns a
+  whole line). Key order is never changed.
+
+```go
+out, err := ktav.FormatSource("## why\na:   {x: 1}\n")
+// "## why\na: {\n    x: 1\n}\n"
+// the comment survives; the inline compound is expanded to canonical
+// multi-line form and re-indented
+```
+
+Blank lines survive as a grouping hint, but a run of two or more
+collapses to exactly one, and blank padding immediately inside a bracket
+is dropped:
+
+```go
+ktav.FormatSource("## keep me\n\n\nport: 8080\n")
+// "## keep me\n\nport: 8080\n" — two blank lines became one
+```
+
+That makes formatting a fixed point:
+
+```go
+ktav.FormatSource(ktav.FormatSource(x)) == ktav.FormatSource(x)
+```
+
+For a document with no comments and no blank lines, the result equals
+`CanonicalFromSource` of the same text.
+
+## Structured errors
+
+Every failure carries the same structured envelope the other Ktav
+bindings carry, so a tool can act on the fields instead of parsing a
+message. `Loads`, `Dumps` and the rest return an `*Error`:
+
+```go
+if _, err := ktav.Loads("a: 1\na: 2\n"); err != nil {
+    var kerr *ktav.Error
+    if errors.As(err, &kerr) {
+        fmt.Println(kerr.Class)       // "DuplicateKey"
+        fmt.Println(kerr.Line)        // 2
+        fmt.Println(kerr.SpecSection) // "§6.2"
+    }
+}
+```
+
+| Field | Meaning |
+| --- | --- |
+| `Msg` | The core's own rendering of the error. Never empty; this is what `Error()` returns. |
+| `Class` | Structured error class — `DuplicateKey`, `Unrepresentable`, `Message`. |
+| `Reason` | Writer-time reason code (spec § 5.9.0) such as `NonFiniteFloat`; `""` when the envelope carries null. |
+| `Line` | 1-based source line; `0` when the envelope carries null. |
+| `LineText` | Text of the offending line. |
+| `Span` | `*Span` — byte offsets into the UTF-8 source. |
+| `Path` | Exact decoded key segments. |
+| `Body` | The offending value as written. |
+| `Canonical` | What the canonical form would have been. |
+| `SpecSection` | The clause violated, e.g. `§3.6/§5.2`. |
+
+Two details that are easy to get wrong:
+
+- **`Span` is byte offsets into UTF-8**, not UTF-16 code units. An LSP
+  consumer either converts or negotiates `positionEncoding: "utf-8"`.
+- **`Path` is a slice of segments, never a joined string.** A key
+  literally named `a.b` is one segment and cannot be confused with a
+  two-segment path — there is no separator to be ambiguous about.
+
+`Msg` is taken from the core verbatim rather than assembled here, so the
+same document produces the same error text in every Ktav binding.
 
 ## Type mapping
 

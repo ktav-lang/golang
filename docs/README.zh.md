@@ -113,6 +113,80 @@ fmt.Print(out)
 | `Dumps(v any) (string, error)` | 将 Go 值渲染为 Ktav 文本。顶层必须为对象或数组。 |
 | `DumpsForceStrings(v any) (string, error)` | 同 `Dumps`，但所有叶标量（integer、float、bool、null）通过 `::` 强制为 String。 |
 | `EmitCanonical(v any) (string, error)` | 输出规范 Ktav（spec § 5.9 — 字节确定性，无内联复合）。 |
+| `CanonicalFromSource(src string) (string, error)` | 解析 Ktav 并立即输出规范形式，保留源文件的键顺序。 |
+| `FormatSource(src string) (string, error)` | 把 Ktav 源文本格式化为规范化写法，**保留全部注释**。见下文。 |
+
+## 格式化 —— 规范写法，保留注释
+
+`FormatSource` 与 `EmitCanonical` 是两种不同的操作,值得分清需要哪一个:
+
+- **`EmitCanonical`** 接受 Go 值并写出规范形式。值里不存在注释,
+  因此没有任何注释可以保留。
+- **`FormatSource`** 接受源**文本**,重写其写法,同时**逐字保留每条
+  注释**(spec § 3.4:注释独占一整行)。键顺序绝不改变。
+
+```go
+out, err := ktav.FormatSource("## why\na:   {x: 1}\n")
+// "## why\na: {\n    x: 1\n}\n"
+// 注释保留;inline 复合值被展开为规范的多行形式并重新缩进
+```
+
+空行作为分组提示保留下来,但连续两行及以上会合并为恰好一行,紧贴括号
+内侧的空行填充会被丢弃:
+
+```go
+ktav.FormatSource("## keep me\n\n\nport: 8080\n")
+// "## keep me\n\nport: 8080\n" —— 两个空行变成一个
+```
+
+因此格式化是一个不动点:
+
+```go
+ktav.FormatSource(ktav.FormatSource(x)) == ktav.FormatSource(x)
+```
+
+对于没有注释也没有空行的文档,结果与同一文本的 `CanonicalFromSource`
+相同。
+
+## 结构化错误
+
+每一次失败都携带与其他 Ktav 绑定相同的结构化信封,因此工具可以针对
+字段做处理,而不必解析消息文本。`Loads`、`Dumps` 等返回 `*Error`:
+
+```go
+if _, err := ktav.Loads("a: 1\na: 2\n"); err != nil {
+    var kerr *ktav.Error
+    if errors.As(err, &kerr) {
+        fmt.Println(kerr.Class)       // "DuplicateKey"
+        fmt.Println(kerr.Line)        // 2
+        fmt.Println(kerr.SpecSection) // "§6.2"
+    }
+}
+```
+
+| 字段 | 含义 |
+| --- | --- |
+| `Msg` | 来自核心自身的错误渲染文本。永不为空;`Error()` 返回的就是它。 |
+| `Class` | 结构化错误类别 —— `DuplicateKey`、`Unrepresentable`、`Message`。 |
+| `Reason` | writer 侧的原因码(spec § 5.9.0),如 `NonFiniteFloat`;信封为 null 时是 `""`。 |
+| `Line` | 1 起算的源行号;信封为 null 时是 `0`。 |
+| `LineText` | 出错那一行的文本。 |
+| `Span` | `*Span` —— UTF-8 源文本中的字节偏移。 |
+| `Path` | 精确解码后的键段。 |
+| `Body` | 出错的值,按写法原样。 |
+| `Canonical` | 规范形式本应是什么。 |
+| `SpecSection` | 被违反的条款,如 `§3.6/§5.2`。 |
+
+两处容易弄错的细节:
+
+- **`Span` 是 UTF-8 中的字节偏移**,不是 UTF-16 码元。LSP 消费方要么
+  自行转换,要么协商 `positionEncoding: "utf-8"`。
+- **`Path` 是键段切片,绝不是拼接后的字符串。** 字面名为 `a.b` 的键
+  是**一个**段,不可能与两段路径混淆 —— 提供在线契约中并不存在可供
+  歧义解读的分隔符。
+
+`Msg` 是从核心逐字取得的,并非在此处拼装,因此同一份文档在任何 Ktav
+绑定中都产生相同的错误文本。
 
 ## 类型映射
 

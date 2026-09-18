@@ -687,7 +687,7 @@ list:
     }
 
     #[test]
-    fn format_abi_error_envelope_has_nine_fields() {
+    fn format_abi_error_envelope_has_ten_fields() {
         // UTF-8 failure path.
         let (rc, err) = unsafe { call_format(b"a: \xff\xfe") };
         assert_eq!(rc, 1);
@@ -704,7 +704,8 @@ list:
                 "path",
                 "body",
                 "canonical",
-                "spec_section"
+                "spec_section",
+                "message"
             ]
         );
         assert_eq!(v["error"], "Message");
@@ -718,7 +719,7 @@ list:
         let (rc, err) = unsafe { call_format(b"a: [") };
         assert_eq!(rc, 1);
         let v: Json = serde_json::from_str(&err.unwrap()).unwrap();
-        assert!(v.as_object().unwrap().len() == 9);
+        assert!(v.as_object().unwrap().len() == 10);
         assert!(v["error"].is_string());
     }
 }

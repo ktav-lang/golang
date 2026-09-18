@@ -7,10 +7,13 @@ import (
 	"strings"
 )
 
-// Error is the binding's error type, carrying the native ktav error
-// envelope's nine fields as first-class members. A zero value ("" / 0 /
-// nil) corresponds to an explicit JSON null in the envelope. Msg is a
-// human-readable reconstruction — never the raw envelope JSON.
+// Error is the binding's error type, carrying the nine other native
+// ktav error envelope fields as first-class members. A zero value
+// ("" / 0 / nil) corresponds to an explicit JSON null in the envelope.
+// Msg is the envelope's own `message` field (ktav 0.7.2+), taken
+// verbatim — never the raw envelope JSON, and never reassembled from
+// the other fields. Against a pre-0.7.2 native library, which never
+// wrote `message`, Msg falls back to a local reconstruction.
 type Error struct {
 	Msg         string
 	Class       string // envelope "error": ktav::Error variant name
@@ -40,9 +43,11 @@ func newErrorf(format string, args ...any) *Error {
 }
 
 // envelopeJSON is the wire shape of the native error envelope
-// (ktav::ErrorEnvelope::to_json): one JSON object, nine fields in
-// order, absent info as explicit null. Nullable fields are pointers
-// here so a JSON null maps to nil rather than a zero value.
+// (ktav::ErrorEnvelope::to_json): one JSON object, ten fields since
+// ktav 0.7.2 (message was appended), absent info as explicit null
+// (message itself is never null — every error renders). Nullable
+// fields are pointers here so a JSON null maps to nil rather than a
+// zero value.
 type envelopeJSON struct {
 	Error       *string   `json:"error"`
 	Reason      *string   `json:"reason"`
@@ -53,13 +58,16 @@ type envelopeJSON struct {
 	Body        *string   `json:"body"`
 	Canonical   *string   `json:"canonical"`
 	SpecSection *string   `json:"spec_section"`
+	Message     *string   `json:"message"`
 }
 
 // errorFromEnvelope parses the native error payload as the structured
-// envelope JSON and reconstructs a human-readable Msg. If the bytes do
-// not parse as a JSON object with a string `error` field (e.g. a stale
-// pre-envelope native library still emitting plain message strings),
-// it falls back to a Msg-only Error carrying the raw text.
+// envelope JSON and takes Msg from the envelope's own `message` field
+// verbatim (falling back to a local reconstruction against a pre-0.7.2
+// native library that never wrote it). If the bytes do not parse as a
+// JSON object with a string `error` field (e.g. a stale pre-envelope
+// native library still emitting plain message strings), it falls back
+// to a Msg-only Error carrying the raw text.
 func errorFromEnvelope(raw []byte) *Error {
 	var env envelopeJSON
 	if err := json.Unmarshal(raw, &env); err != nil || env.Error == nil {
@@ -91,17 +99,26 @@ func errorFromEnvelope(raw []byte) *Error {
 	if env.SpecSection != nil {
 		e.SpecSection = *env.SpecSection
 	}
-	e.Msg = e.reconstructMessage()
+	if env.Message != nil {
+		e.Msg = *env.Message
+	} else {
+		e.Msg = e.reconstructMessage()
+	}
 	return e
 }
 
-// reconstructMessage renders the envelope as
+// reconstructMessage is the pre-0.7.2 fallback, used only when the
+// envelope has no `message` field. Renders the envelope as
 //
 //	ktav: <Class>[ <Reason>][ at line N][ (path "a"."b.c")]: <Body>
 //
 // omitting empty parts (and the trailing colon when Body is empty).
 // Fragments conformance tests match on — reason codes like
 // EmptyKeyName and Body text like "object or array" — survive here.
+// Against a real 0.7.2 core, those same fragments survive too: the
+// core's own Display text embeds the class/reason name up front (e.g.
+// "NonFiniteFloat: a Float is NaN or ±Infinity ..."), which is why
+// switching to verbatim `message` did not need any test changes here.
 func (e *Error) reconstructMessage() string {
 	var b strings.Builder
 	b.WriteString("ktav: ")
