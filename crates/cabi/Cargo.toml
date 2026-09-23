@@ -9,14 +9,11 @@ rust-version.workspace = true
 publish = false
 
 [package.metadata.ktav]
-spec-version = "0.7.1"
+spec-version = "0.8.0"
 
 [lib]
 name = "ktav_cabi"
 crate-type = ["cdylib"]
 
 [dependencies]
-ktav = { workspace = true }
-serde = { workspace = true }
-serde_json = { workspace = true }
-indexmap = { workspace = true }
+ktav = { workspace = true, features = ["cabi"] }
