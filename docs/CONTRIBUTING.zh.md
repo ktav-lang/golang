@@ -34,7 +34,8 @@ purego 加载器、缓存 / 下载逻辑。
 - **semver 破坏**（重命名 / 移除、改签名、收紧类型）—— 在 pre-1.0
   阶段这类改动走下一个 MINOR。
 
-`CHANGELOG.md` 和两个翻译版本在同一个 PR 里更新。
+在同一个 PR 中更新 `root-docs/CHANGELOG/` 下的 CHANGELOG 源单元
+(全部三个 `>>>>> lang=` 块)并重新生成产物。
 
 ### 4. 一个 commit 一个概念
 
@@ -62,9 +63,9 @@ tag 对齐。升级 Go 模块版本时，在同一个 commit 里更新 `LibVersi
 
 ```
 ktav-lang/
-├── golang/    ← 本仓库
-├── rust/      ← 相邻 Rust crate（本地开发的 path 依赖）
-└── spec/      ← conformance fixtures（golang/spec/ 的 submodule）
+├── golang/    ← this repo
+├── rust/      ← sibling Rust crate (path dep for local dev)
+└── spec/      ← conformance fixtures (git submodule at golang/spec/)
 ```
 
 Rust C ABI crate（`crates/cabi/`）默认依赖 crates.io 上发布的 `ktav`。
@@ -126,7 +127,7 @@ CI 跑同样的命令；push 前本地先过一遍。
 二进制（`linux` amd64/arm64、`darwin` amd64/arm64、`windows` amd64/arm64），
 作为 GitHub Release assets 附加，Go proxy 会自动索引 tag。
 `internal/native/loader.go` 中的 `LibVersion` 常量必须与 tag 对齐 ——
-在打 tag 的同一 commit 里更新。
+在打 tag 消息的同一 commit 里更新。
 
 ## 哲学
 

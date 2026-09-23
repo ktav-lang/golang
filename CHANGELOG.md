@@ -34,6 +34,19 @@ itself — for the latter see
   unchanged — quoted key segments (spec 0.7 § 5.3.3) and `\uXXXX`
   escapes (§ 3.7.1) arrive through the Rust core, so the new 0.7 error
   kinds (§§ 6.11–6.16) need no new Go-side surface.
+- Migrated `crates/cabi` to a single `ktav::declare_cabi!()` invocation
+  (ktav's `cabi` feature) instead of a hand-rolled C ABI shim; the
+  exported symbol surface (`ktav_loads`, `ktav_loads_strict`,
+  `ktav_dumps`, `ktav_dumps_force_strings`, `ktav_emit_canonical`,
+  `ktav_format`, `ktav_canonical_from_source`, `ktav_free`,
+  `ktav_version`, `ktav_abi_version`) is unchanged, so the Go API is
+  unaffected. Dependency floor raised to `ktav 0.8`, spec submodule
+  re-pinned to `v0.8.0` (adds § 5.2: a decimal with a redundant leading
+  zero parses as a String, not an Integer).
+- The module version moves to **0.8.0**, in step with the core and the
+  specification; the prebuilt-library download fallback now targets the
+  `v0.8.0` release asset.
+
 - **Breaking:** the error channel now surfaces the structured ktav
   error envelope. `ktav.Error` carries the envelope's fields as
   first-class members — `Class`, `Reason`, `Line`, `LineText`, `Span`,
@@ -44,11 +57,17 @@ itself — for the latter see
   in every Ktav binding. Surface error text therefore changes; matching
   on raw message strings is not stable across this boundary. Intended
   change.
-- The conformance runner reads `spec/versions/0.7/tests` and now executes
-  the two refuse categories 0.7 adds: `unrepresentable/` (a JSON value
-  the writer must refuse — asserted on both `Dumps` and `EmitCanonical`)
-  and `parseable-unrepresentable/` (`Loads` must match the oracle value,
-  canonical emit must refuse), each with per-case reason assertions.
+- The conformance runner reads `spec/versions/0.8/tests` (it silently
+  kept reading the stale `0.7` corpus after the submodule was re-pinned
+  to `0.8.0` — the path was hardcoded, not derived from the pin) and
+  executes every fixture category the corpus ships: `unrepresentable/`
+  and `parseable-unrepresentable/` (a JSON value / parseable value the
+  writer must refuse, asserted on both `Dumps` and `EmitCanonical`) and
+  the new `strict-lossy/` (`Loads` must equal the lax value, `LoadsStrict`
+  must refuse with the matching reason, body and canonical form), each
+  with per-case reason assertions. A guard test fails the build if an
+  unrecognized category directory appears under the corpus, so a future
+  addition can't repeat this silently.
 
 ## 0.6.4 — 2026-08-23
 

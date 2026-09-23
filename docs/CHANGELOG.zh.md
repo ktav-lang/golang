@@ -1,11 +1,21 @@
 # Changelog
 
+**语言:** [English](../CHANGELOG.md) · [Русский](CHANGELOG.ru.md) · **简体中文**
+
+本文件记录 Go 绑定的所有重要变更。格式基于
+[Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/);版本遵循
+[Semantic Versioning](https://semver.org/),并采用 pre-1.0 约定:
+MINOR 递进视为破坏性变更。
+
+本 changelog 跟踪**绑定发布**,不涉及 Ktav 格式本身的变更 —— 后者见
+[`ktav-lang/spec`](https://github.com/ktav-lang/spec/blob/main/CHANGELOG.md).
+
 ## 未发布
 
 ### 新增
 
 - **`FormatSource(s string) (string, error)`** —— 新的 C ABI 符号
-  `ktav_format`,作为保留注释的 Ktav 源文本格式化器对外开放。每条注释
+  `ktav_format`,作为保留注释的 Ktav 源文本格式化器对外暴露。每条注释
   都逐字保留(spec § 3.4:注释独占一整行);空行作为分组提示保留,但
   连续两行及以上会合并为恰好一行,紧贴括号内侧的空行填充会被丢弃,
   因此格式化是一个不动点:
@@ -20,6 +30,16 @@
   quoted 键段(spec 0.7 § 5.3.3)与 `\uXXXX` escape(§ 3.7.1)经由
   Rust 核心到达,因此 0.7 新增的错误类别(§§ 6.11–6.16)不需要新的
   Go 侧接口。
+- `crates/cabi` 改为单次调用 `ktav::declare_cabi!()`(ktav 的 `cabi`
+  特性),取代手写的 C ABI 垫片;导出的符号集(`ktav_loads`、
+  `ktav_loads_strict`、`ktav_dumps`、`ktav_dumps_force_strings`、
+  `ktav_emit_canonical`、`ktav_format`、`ktav_canonical_from_source`、
+  `ktav_free`、`ktav_version`、`ktav_abi_version`)不变,因此绑定 API
+  不受影响。依赖下限提升至 `ktav 0.8`,spec 子模块重新固定到 `v0.8.0`
+  (新增 § 5.2:带有多余前导零的十进制数解析为 String,而非 Integer)。
+- 包版本升至 **0.8.0**,与核心和规范同步;预编译库的回退下载现在指向
+  `v0.8.0` 发布资产。
+
 - **破坏性:** 错误通道现在呈现结构化的 ktav 错误信封。`ktav.Error`
   以一等成员携带信封字段 —— `Class`、`Reason`、`Line`、`LineText`、
   `Span`、`Path`(精确解码后的键段,绝不是拼接字符串)、`Body`、
@@ -28,40 +48,35 @@
   份文档在任何 Ktav 绑定中都产生相同的错误文本。对外的错误文本因此
   发生变化;跨越这一边界去匹配原始消息字符串并不稳定。此变更是有意
   为之。
-- Conformance 运行器读取 `spec/versions/0.7/tests`,并开始执行 0.7 新增
-  的两个拒绝类别:`unrepresentable/`(writer 必须拒绝的 JSON 值 ——
-  对 `Dumps` 与 `EmitCanonical` 都作断言)与
-  `parseable-unrepresentable/`(`Loads` 必须与 oracle 值一致,规范输出
-  必须拒绝),二者都逐例断言原因码。
+- Conformance 运行器读取 `spec/versions/0.8/tests`(子模块重新固定到
+  `0.8.0` 之后,它一直静默读取过期的 `0.7` 语料——路径是硬编码的,
+  并非从固定版本推导而来),并执行语料中的每个类别:
+  `unrepresentable/` 与 `parseable-unrepresentable/`(writer 必须拒绝
+  的 JSON 值 / 可解析的值——对 `Dumps` 与 `EmitCanonical` 都作断言),
+  以及新增的 `strict-lossy/`(`Loads` 必须等于 lax 值,`LoadsStrict`
+  必须以匹配的原因、body 与规范形式拒绝),每个类别都逐例断言原因码。
+  一个 guard 测试会在语料中出现无法识别的类别目录时使构建失败,以
+  防止这个问题再次悄然发生。
 
-## 0.6.4 —— 2026-08-23
+## 0.6.4 — 2026-08-23
 
 ### 新增
 
-- **`LoadsStrict(s string) (any, error)`** —— 通过 Go binding 和
+- **`LoadsStrict(s string) (any, error)`** —— 通过 Go 绑定和
   `ktav_loads_strict` C ABI 符号暴露 Rust strict parser。
 
 ### 变更
 
-- 跟踪 `ktav 0.6.4` 与 spec 0.6.4，包括规范化 float 边界和
+- 跟踪 `ktav 0.6.4` 与 spec 0.6.4,包括规范化 float 边界和
   `notation_boundaries` fixture。
 - 原生库加载器现在指向精确的 `v0.6.4` release asset。
 
-**语言:** [English](../CHANGELOG.md) · [Русский](CHANGELOG.ru.md) · **简体中文**
-
-本文档记录 Go 绑定的所有重要变更。格式基于
-[Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/);版本采用
-[Semantic Versioning](https://semver.org/),遵循 pre-1.0 约定:
-MINOR 版本升级视为破坏性。
-
-本 changelog 跟踪**绑定发布**,不涉及 Ktav 格式本身的变更 —— 后者见
-[`ktav-lang/spec`](https://github.com/ktav-lang/spec/blob/main/CHANGELOG.md)。
-
 ## [0.6.1] — 2026-06-05
 
-- 文档：将所有 README 示例改写为 spec 0.6 语法（裸数字替代已移除的 `:i`/`:f` 标记；`##` 注释替代 `#`）。
+- 文档:将所有 README 示例改写为 spec 0.6 语法(裸数字替代已移除的
+  `:i`/`:f` 标记;`##` 注释替代 `#`)。
 
-## 0.6.0 —— 2026-06-01
+## 0.6.0 — 2026-06-01
 
 同步至 Ktav 0.6.0 —— 键现在支持转义。
 
@@ -85,38 +100,99 @@ MINOR 版本升级视为破坏性。
 
 ---
 
-## 0.5.0 —— 2026-05-28
+## 0.5.0 — 2026-05-28
 
 ### 破坏性变更
 
-- **Spec 0.5.0**：类型标记 `:i` / `:f` 不再存在。数字从标量体词法形式
-  推断（`42` → Integer，`3.14` → Float）。使用旧标记的 spec 0.1.x
-  文档需更新。
-- **`##` 注释**：单 `#` 现为字面字符；注释需使用 `##`。
-- **Float 规范化**：Float 值以 shortest-decimal 规范形式存储。旧序列化
-  输出的字节级比对可能失败。
-- **C ABI 新增第六个符号** `ktav_emit_canonical`；旧二进制会报符号缺失。
+- **Spec 0.5.0**: 类型标记 `:i` / `:f` 不再存在。数字从标量体词法形式
+  推断(`42` → Integer,`3.14` → Float)。为 spec 0.1.x 编写的、带显式
+  类型标记的文档解析结果不同,必须更新。
+- **`##` 注释**: 单 `#` 现为字面字符;注释需使用 `##`。请更新任何
+  使用了 `# 注释` 的 Ktav 源码。
+- **Float 规范化**: Float 值以 shortest-decimal 规范形式存储(无下划线,
+  无前导 `+`)。与旧的序列化输出做字节级比对可能失败。
+- **C ABI 新增第六个符号** `ktav_emit_canonical`;将 `KTAV_LIB_PATH`
+  指向 pre-0.5.0 的二进制会因符号缺失而失败。
 
 ### 新增
 
-- **`EmitCanonical(v any) (string, error)`** — 输出规范 Ktav（spec § 5.9）：
-  字节确定性，无内联复合，规范 integer / float 正规化。
-- **`TestConformanceCanonical`** — 验证 `EmitCanonical` 输出与每个
-  `.canonical.ktav` oracle 字节一致。
+- **`EmitCanonical(v any) (string, error)`** — 将 Go 值渲染为规范 Ktav
+  (spec § 5.9):字节确定性输出,无内联复合,规范的 integer / float
+  正规化。两次相同输入的调用总是产生完全相同的字节。
+- **`TestConformanceCanonical`** — 新的一致性测试套件,验证
+  `EmitCanonical` 输出与 spec fixtures 中每个 `.canonical.ktav` oracle
+  字节一致。
 
 ### 变更
 
-- **升级到 `ktav 0.5.0`** — 跟踪上游 Rust crate 的 spec 0.5 实现：
+- **升级到 `ktav 0.5.0`** — 跟踪上游 Rust crate 的 spec 0.5 实现:
   推断数字类型、`##` 注释、`emit_canonical` API。spec submodule 同步
-  至标签 `v0.5.0`。
+  至标签 `v0.5.0`。完整变更见
+  [`ktav` crate CHANGELOG](https://github.com/ktav-lang/rust/blob/main/CHANGELOG.md#050)。
 - **许可证变更为 `MIT OR Apache-2.0`** — 与 `ktav-lang` 生态系统保持
-  一致。`LICENSE` 改名为 `LICENSE-MIT`；新增 `LICENSE-APACHE`。
-- **一致性测试更新至 spec 0.5 fixtures** — 路径
-  `spec/versions/0.5/tests`；`.canonical.ktav` 从 JSON oracle 测试
-  中排除，由新规范测试处理。
+  一致。`LICENSE` 改名为 `LICENSE-MIT`;新增 `LICENSE-APACHE`。
+  `Cargo.toml` 中的 SPDX 表达式已相应更新。
+- **一致性测试套件更新至 spec 0.5 fixtures** — 路径
+  `spec/versions/0.5/tests`;`.canonical.ktav` 文件从 JSON oracle 测试
+  中排除,由新的规范测试套件处理。
 
 
-## 0.1.2 —— 2026-05-03
+## 0.3.1 — 2026-05-10
+
+### 新增
+
+- **顶层 Array 支持**(spec 0.1.1,§ 5.0.1)—— 当文档的第一个内容行是
+  数组元素行(裸标量、类型标记、单独的 `{`/`[` 或多行开启符)时,
+  `Loads` 现在返回 `[]any`。此前顶层 Array 会被拒绝。
+- **`Dumps` 接受顶层数组** —— 传入任意切片(`[]any`、`[]string`
+  等),渲染出的 Ktav 逐行罗列元素,不带外层 `[...]`。
+- **`DumpsForceStrings(v any) (string, error)`** —— 将 Go 值渲染为
+  Ktav,每个标量都强制为 String(带类型整数、带类型浮点、布尔、null
+  都经由 raw 标记 `::` 摊平为文本形式)。复合结构保持原状。输出经
+  `Loads` 读回仍是同一组 String 标量 —— 适用于不理解 `:i` / `:f`
+  类型标记的环境或下游消费者。
+
+### 变更
+
+- **升级到 `ktav 0.3.1`** —— 跟踪上游 Rust crate 的顶层 Array 支持与
+  `to_string_force_strings` API。spec submodule 同步至 `7256816`
+  (spec 0.1.1)。完整变更见
+  [`ktav` crate CHANGELOG](https://github.com/ktav-lang/rust/blob/main/CHANGELOG.md#031--2026-05-10)。
+- **C ABI 新增第五个符号** `ktav_dumps_force_strings`,与既有符号
+  `ktav_loads` / `ktav_dumps` / `ktav_free` / `ktav_version` 并列。
+  Go 加载器在首次使用时绑定全部五个符号;将 `KTAV_LIB_PATH` 指向
+  pre-0.3.1 二进制会因符号缺失而失败。
+
+
+## 0.3.0 — 2026-05-08
+
+### 变更
+
+- **升级到 `ktav 0.3.0`** —— 跟踪 ktav 0.3.0(paren 字符串处理收紧:
+  行内 `(...)` 形式现在无效,必须改用多行形式)。spec submodule 同步至
+  `46d94a7`。完整变更见
+  [`ktav` crate CHANGELOG](https://github.com/ktav-lang/rust/blob/main/CHANGELOG.md#030--2026-05-08)。
+
+
+## 0.2.0 — 2026-05-07
+
+### 变更(破坏性)
+
+- **升级到 `ktav 0.2.0`** —— 多行字符串现在默认序列化为缩进剥离的
+  `( ... )` 形式(逐字的 `(( ... ))` 仍作为内容含前导空白或整行仅一个
+  `)` 时的回退)。`:f 42` 接受整数字面量(解析为 `42.0`)。完整变更见
+  [`ktav` crate CHANGELOG](https://github.com/ktav-lang/rust/blob/main/CHANGELOG.md#020--2026-05-07)。
+
+  将序列化输出与内置的 `((...))` 字面量逐字节比较的代码需要更新。
+  Round-trip 不变。
+
+### 规范
+
+- spec submodule 同步(typed_float_without_decimal 从 invalid 移至
+  valid/typed_float_integer_body)。
+
+
+## 0.1.2 — 2026-05-03
 
 ### 变更
 
@@ -133,7 +209,7 @@ MINOR 版本升级视为破坏性。
 
 `go get github.com/ktav-lang/golang@v0.1.2`。
 
-## 0.1.1 —— 2026-04-26
+## 0.1.1 — 2026-04-26
 
 ### 变更
 
@@ -142,11 +218,11 @@ MINOR 版本升级视为破坏性。
   `Frame::Object` 的初始容量微调(4 → 8)。每次 `ktav.Loads` 都会
   透明地受益。
 
-## 0.1.0 —— 首次公开发布
+## 0.1.0 — 首次公开发布
 
 首次发布。面向 **Ktav 格式 0.1**。
 
-### Module 路径
+### 模块路径
 
 以 `github.com/ktav-lang/golang` 发布。`v0.1.0` git tag 推送后
 Go proxy 会自动索引。
@@ -161,13 +237,13 @@ Go proxy 会自动索引。
 
 ### 架构
 
-- **原生核心** —— 参考 Rust `ktav` crate，通过极小的 `extern "C"` C ABI
-  (`crates/cabi`) 封装，以预编译的 `.so` / `.dylib` / `.dll` 分发。
-- **Go 加载器** —— `purego`（无 cgo）: 库在首次调用时从 `$KTAV_LIB_PATH`
-  解析，或一次性从匹配的 GitHub Release asset 下载到 `UserCacheDir`。
-- **Wire 格式** —— Rust 和 Go 之间用 JSON，用 `{"$i":"..."}` /
+- **原生核心** —— 参考 Rust `ktav` crate,通过极小的 `extern "C"` C ABI
+  (`crates/cabi`) 封装,以预编译的 `.so` / `.dylib` / `.dll` 分发。
+- **Go 加载器** —— `purego`(无 cgo):库在首次调用时从 `$KTAV_LIB_PATH`
+  解析,或一次性从匹配的 GitHub Release asset 下载到 `UserCacheDir`。
+- **Wire 格式** —— Rust 和 Go 之间用 JSON,用 `{"$i":"..."}` /
   `{"$f":"..."}` 标签包装器保证类型化 integer / float 的无损 round-trip
-  和任意精度（`*big.Int`）。
+  和任意精度(`*big.Int`)。
 
 ### 类型映射
 
@@ -175,17 +251,17 @@ Go proxy 会自动索引。
 | ---------------- | ------------------------------------------------- |
 | `null`           | `nil`                                             |
 | `true` / `false` | `bool`                                            |
-| `:i <digits>`    | `int64`（安全范围）/ `*big.Int`（更大）           |
+| `:i <digits>`    | `int64`(安全范围)/ `*big.Int`(更大)           |
 | `:f <number>`    | `float64`                                         |
 | 裸标量           | `string`                                          |
 | `[ ... ]`        | `[]any`                                           |
-| `{ ... }`        | `map[string]any`（保留插入顺序）                  |
+| `{ ... }`        | `map[string]any`(保留插入顺序)                  |
 
 ### 平台
 
 预编译原生二进制:
 
-- `linux/amd64`、`linux/arm64`（glibc）
+- `linux/amd64`、`linux/arm64`(glibc)
 - `darwin/amd64`、`darwin/arm64`
 - `windows/amd64`、`windows/arm64`
 
@@ -194,9 +270,9 @@ Alpine (musl) —— 下一个版本支持。
 ### 测试覆盖
 
 在 Go 1.21 / 1.22 / 1.23 × Linux / macOS / Windows 上运行 Ktav 0.1
-完整 conformance 套件（所有 `valid/` 与 `invalid/` fixture）。
+完整 conformance 套件(所有 `valid/` 与 `invalid/` fixture)。
 
 ### 致谢
 
-基于参考 `ktav` Rust crate；动态加载使用
+基于参考 `ktav` Rust crate;动态加载使用
 [`ebitengine/purego`](https://github.com/ebitengine/purego)。

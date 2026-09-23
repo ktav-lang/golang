@@ -424,3 +424,93 @@ func TestConformanceParseableUnrepresentable(t *testing.T) {
 		})
 	}
 }
+
+// TestConformanceStrictLossy walks spec 0.8's strict-lossy/ category:
+// Loads accepts the fixture and yields lax_value; LoadsStrict refuses it
+// with LossyScalar naming the oracle's exact body and canonical.
+func TestConformanceStrictLossy(t *testing.T) {
+	requireCabi(t)
+	specRoot := requireSpec(t)
+
+	var cases []string
+	err := filepath.Walk(filepath.Join(specRoot, "strict-lossy"), func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if !info.IsDir() && strings.HasSuffix(path, ".ktav") {
+			cases = append(cases, path)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("walk: %v", err)
+	}
+	if len(cases) == 0 {
+		t.Fatal("no strict-lossy fixtures found")
+	}
+
+	for _, p := range cases {
+		name := strings.TrimPrefix(p, specRoot+string(filepath.Separator))
+		t.Run(name, func(t *testing.T) {
+			src, err := os.ReadFile(p)
+			if err != nil {
+				t.Fatal(err)
+			}
+			oracleRaw, err := os.ReadFile(strings.TrimSuffix(p, ".ktav") + ".json")
+			if err != nil {
+				t.Fatalf("oracle missing: %v", err)
+			}
+			var oracle struct {
+				LaxValue      json.RawMessage `json:"lax_value"`
+				ExpectedError string          `json:"expected_error"`
+				Body          string          `json:"body"`
+				Canonical     string          `json:"canonical"`
+			}
+			if err := json.Unmarshal(oracleRaw, &oracle); err != nil {
+				t.Fatalf("oracle decode: %v", err)
+			}
+			want, err := decodeOracle(oracle.LaxValue)
+			if err != nil {
+				t.Fatalf("lax_value decode: %v", err)
+			}
+
+			got, err := ktav.Loads(string(src))
+			if err != nil {
+				t.Fatalf("Loads: %v\n--- input ---\n%s", err, src)
+			}
+			if !structEqual(got, want) {
+				t.Fatalf("lax mismatch\nktav src:\n%s\nktav got: %#v\noracle:   %#v", src, got, want)
+			}
+
+			_, err = ktav.LoadsStrict(string(src))
+			var ktavErr *ktav.Error
+			if !errors.As(err, &ktavErr) {
+				t.Fatalf("LoadsStrict: want *ktav.Error, got %T (%v)", err, err)
+			}
+			if ktavErr.Class != oracle.ExpectedError || ktavErr.Body != oracle.Body || ktavErr.Canonical != oracle.Canonical {
+				t.Fatalf("LoadsStrict error = {%s %q %q}, want {%s %q %q}",
+					ktavErr.Class, ktavErr.Body, ktavErr.Canonical,
+					oracle.ExpectedError, oracle.Body, oracle.Canonical)
+			}
+		})
+	}
+}
+
+// TestConformanceCategoryGuard fails when the corpus grows a fixture
+// category this runner does not execute, instead of silently ignoring it.
+func TestConformanceCategoryGuard(t *testing.T) {
+	specRoot := requireSpec(t)
+	known := map[string]bool{
+		"valid": true, "invalid": true, "unrepresentable": true,
+		"parseable-unrepresentable": true, "strict-lossy": true,
+	}
+	entries, err := os.ReadDir(specRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range entries {
+		if e.IsDir() && !known[e.Name()] {
+			t.Errorf("unknown fixture category directory %q: the runner must execute it", e.Name())
+		}
+	}
+}

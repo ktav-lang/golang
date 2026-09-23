@@ -99,6 +99,15 @@ doc := map[string]any{
 }
 out, _ := ktav.Dumps(doc)
 fmt.Print(out)
+// name: frontend
+// port: 8443
+// tls: true
+// ratio: 0.95
+// upstreams: [
+//     { host: a.example  port: 1080 }
+//     { host: b.example  port: 1080 }
+// ]
+// notes: null
 ```
 
 Полный запускаемый пример — в [`examples/basic`](../examples/basic/main.go).
@@ -107,12 +116,12 @@ fmt.Print(out)
 
 | Функция | Назначение |
 | --- | --- |
-| `Loads(s string) (any, error)` | Разобрать документ Ktav в нативные Go-значения. |
-| `LoadsStrict(s string) (any, error)` | Разобрать документ в strict-режиме с проверкой канонической записи чисел. |
+| `Loads(s string) (any, error)` | Разобрать документ Ktav в нативные Go-значения. Верхний уровень может быть объектом (`map[string]any`) или массивом (`[]any`) согласно spec § 5.0.1. |
+| `LoadsStrict(s string) (any, error)` | Разобрать документ в strict-режиме с проверкой канонической записи чисел. Та же Go-таблица типов, что и у `Loads`. |
 | `LoadsInto(s string, target any) error` | Разобрать в произвольный `target` (struct, map, …) через `encoding/json`. |
-| `Dumps(v any) (string, error)` | Сериализовать Go-значение в Ktav-текст. Верхний уровень — объект или массив. |
-| `DumpsForceStrings(v any) (string, error)` | Как `Dumps`, но все leaf-скаляры (integer, float, bool, null) приводятся к String через `::`. |
-| `EmitCanonical(v any) (string, error)` | Канонический Ktav (spec § 5.9 — байт-детерминированный, без inline-соединений). |
+| `Dumps(v any) (string, error)` | Сериализовать Go-значение в Ktav-текст. Верхний уровень должен сериализоваться в объект или массив. |
+| `DumpsForceStrings(v any) (string, error)` | Как `Dumps`, но все leaf-скаляры (integer, float, bool, null) приводятся к String через `::`. Составные значения сохраняют свою структуру. |
+| `EmitCanonical(v any) (string, error)` | Вывести Go-значение в канонический Ktav (spec § 5.9). Порядок ключей следует итерации Go-map (алфавитный для `map[string]any`). |
 | `CanonicalFromSource(src string) (string, error)` | Разобрать Ktav и сразу вывести каноническую форму, сохраняя порядок ключей источника. |
 | `FormatSource(src string) (string, error)` | Отформатировать Ktav-источник в нормализованное написание, **сохраняя все комментарии**. См. ниже. |
 
@@ -130,17 +139,17 @@ fmt.Print(out)
 ```go
 out, err := ktav.FormatSource("## why\na:   {x: 1}\n")
 // "## why\na: {\n    x: 1\n}\n"
-// комментарий сохранён; inline-составное развёрнуто в каноническую
-// многострочную форму и переотступлено
+// the comment survives; the inline compound is expanded to canonical
+// multi-line form and re-indented
 ```
 
-Пустые строки выживают как подсказка группировки, но серия из двух и
-более схлопывается ровно в одну, а пустой отбивки сразу внутри скобки не
-остаётся:
+Пустые строки сохраняются как подсказка группировки, но серия из двух и
+более схлопывается ровно в одну, а пустые строки непосредственно внутри
+скобки отбрасываются:
 
 ```go
 ktav.FormatSource("## keep me\n\n\nport: 8080\n")
-// "## keep me\n\nport: 8080\n" — две пустых строки стали одной
+// "## keep me\n\nport: 8080\n" — two blank lines became one
 ```
 
 Поэтому форматирование — неподвижная точка:
@@ -219,9 +228,9 @@ if _, err := ktav.Loads("a: 1\na: 2\n"); err != nil {
 записываются через backslash:
 
 ```text
-a\.b: v        // ключ — один сегмент "a.b"     -> map["a.b"] = "v"
-a\:b: v        // двоеточие внутри ключа        -> map["a:b"] = "v"
-x.y\.z: v      // делим только по первой точке  -> map["x"]["y.z"] = "v"
+a\.b: v        // key is the single segment "a.b" -> map["a.b"] = "v"
+a\:b: v        // key contains a colon            -> map["a:b"] = "v"
+x.y\.z: v      // split on the first dot only     -> map["x"]["y.z"] = "v"
 ```
 
 Литеральный backslash в ключе пишется как `\\`.

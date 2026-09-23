@@ -99,6 +99,15 @@ doc := map[string]any{
 }
 out, _ := ktav.Dumps(doc)
 fmt.Print(out)
+// name: frontend
+// port: 8443
+// tls: true
+// ratio: 0.95
+// upstreams: [
+//     { host: a.example  port: 1080 }
+//     { host: b.example  port: 1080 }
+// ]
+// notes: null
 ```
 
 完整可运行示例:[`examples/basic`](../examples/basic/main.go)。
@@ -107,12 +116,12 @@ fmt.Print(out)
 
 | 函数 | 用途 |
 | --- | --- |
-| `Loads(s string) (any, error)` | 将 Ktav 文档解析为原生 Go 值。 |
+| `Loads(s string) (any, error)` | 将 Ktav 文档解析为原生 Go 值。顶层可以是对象(`map[string]any`)或数组(`[]any`),按 spec § 5.0.1。 |
 | `LoadsStrict(s string) (any, error)` | 使用严格数字词法检查解析文档，类型映射与 `Loads` 相同。 |
-| `LoadsInto(s string, target any) error` | 通过 `encoding/json` 解析到任意 `target`（struct、map 等）。 |
+| `LoadsInto(s string, target any) error` | 解析到任意 `target`(struct、map 等),通过 `encoding/json`。 |
 | `Dumps(v any) (string, error)` | 将 Go 值渲染为 Ktav 文本。顶层必须为对象或数组。 |
-| `DumpsForceStrings(v any) (string, error)` | 同 `Dumps`，但所有叶标量（integer、float、bool、null）通过 `::` 强制为 String。 |
-| `EmitCanonical(v any) (string, error)` | 输出规范 Ktav（spec § 5.9 — 字节确定性，无内联复合）。 |
+| `DumpsForceStrings(v any) (string, error)` | 同 `Dumps`,但所有叶标量(integer、float、bool、null)通过 `::` 强制为 String。复合值保留其结构。 |
+| `EmitCanonical(v any) (string, error)` | 把 Go 值渲染为规范 Ktav(spec § 5.9)。键顺序遵循 Go map 迭代(`map[string]any` 为字母序)。 |
 | `CanonicalFromSource(src string) (string, error)` | 解析 Ktav 并立即输出规范形式，保留源文件的键顺序。 |
 | `FormatSource(src string) (string, error)` | 把 Ktav 源文本格式化为规范化写法，**保留全部注释**。见下文。 |
 
@@ -128,7 +137,8 @@ fmt.Print(out)
 ```go
 out, err := ktav.FormatSource("## why\na:   {x: 1}\n")
 // "## why\na: {\n    x: 1\n}\n"
-// 注释保留;inline 复合值被展开为规范的多行形式并重新缩进
+// the comment survives; the inline compound is expanded to canonical
+// multi-line form and re-indented
 ```
 
 空行作为分组提示保留下来,但连续两行及以上会合并为恰好一行,紧贴括号
@@ -136,7 +146,7 @@ out, err := ktav.FormatSource("## why\na:   {x: 1}\n")
 
 ```go
 ktav.FormatSource("## keep me\n\n\nport: 8080\n")
-// "## keep me\n\nport: 8080\n" —— 两个空行变成一个
+// "## keep me\n\nport: 8080\n" — two blank lines became one
 ```
 
 因此格式化是一个不动点:
@@ -182,8 +192,7 @@ if _, err := ktav.Loads("a: 1\na: 2\n"); err != nil {
 - **`Span` 是 UTF-8 中的字节偏移**,不是 UTF-16 码元。LSP 消费方要么
   自行转换,要么协商 `positionEncoding: "utf-8"`。
 - **`Path` 是键段切片,绝不是拼接后的字符串。** 字面名为 `a.b` 的键
-  是**一个**段,不可能与两段路径混淆 —— 提供在线契约中并不存在可供
-  歧义解读的分隔符。
+  是**一个**段,不可能与两段路径混淆 —— 没有分隔符,也就无可歧义。
 
 `Msg` 是从核心逐字取得的,并非在此处拼装,因此同一份文档在任何 Ktav
 绑定中都产生相同的错误文本。
@@ -210,9 +219,9 @@ Go `int*` / `uint*` / `*big.Int` → integer scalar；`float32` / `float64`
 自 spec 0.6.4 起,键段内的字面量 `.` 或 `:` 通过反斜杠书写:
 
 ```text
-a\.b: v        // 键是单个段 "a.b"        -> map["a.b"] = "v"
-a\:b: v        // 键中包含冒号            -> map["a:b"] = "v"
-x.y\.z: v      // 只按第一个点切分        -> map["x"]["y.z"] = "v"
+a\.b: v        // key is the single segment "a.b" -> map["a.b"] = "v"
+a\:b: v        // key contains a colon            -> map["a:b"] = "v"
+x.y\.z: v      // split on the first dot only     -> map["x"]["y.z"] = "v"
 ```
 
 键中的字面量反斜杠写作 `\\`。

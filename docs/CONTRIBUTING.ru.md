@@ -38,7 +38,8 @@ cache / download логика.
   более жёсткие типы) — тогда bump версии уезжает в следующий MINOR
   пока мы pre-1.0.
 
-Обновляй `CHANGELOG.md` и оба перевода в том же PR.
+Обновляй CHANGELOG-юниты под `root-docs/CHANGELOG/` (все три блока
+`>>>>> lang=`) в том же PR и перегенерируй вывод.
 
 ### 4. Один концепт на коммит
 
@@ -68,9 +69,9 @@ cache / download логика.
 
 ```
 ktav-lang/
-├── golang/    ← этот репо
-├── rust/      ← соседний Rust-крейт (path-зависимость для local dev)
-└── spec/      ← conformance-фикстуры (git submodule в golang/spec/)
+├── golang/    ← this repo
+├── rust/      ← sibling Rust crate (path dep for local dev)
+└── spec/      ← conformance fixtures (git submodule at golang/spec/)
 ```
 
 Rust C ABI крейт (`crates/cabi/`) по умолчанию тянет опубликованный
@@ -136,7 +137,7 @@ CI гоняет то же; прогоняй локально перед push.
 `windows` amd64/arm64), прикрепляет как assets GitHub Release, а Go
 proxy подхватит тег сам. Константа `LibVersion` в
 `internal/native/loader.go` должна совпадать с тегом — меняется в том же
-коммите.
+коммите, что и сообщение тега.
 
 ## Философия
 
