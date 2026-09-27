@@ -55,18 +55,26 @@ tag 对齐。升级 Go 模块版本时，在同一个 commit 里更新 `LibVersi
 需要：
 
 - Go **1.21+**。
-- 通过 [`rustup`](https://rustup.rs/) 安装的 Rust toolchain。MSRV: **1.70**。
+- 通过 [`rustup`](https://rustup.rs/) 安装的 Rust toolchain。MSRV: **1.71**。
 - `git`。
 
 开发布局 —— Go 包通过 `purego` 加载 Rust 编译出的 `ktav_cabi` cdylib。
-把 spec 仓库（conformance 测试用）克隆到旁边，或初始化 submodule：
+初始化固定版本的 spec submodule；旁边的 spec 副本不会被使用：
 
 ```
 ktav-lang/
-├── golang/    ← this repo
-├── rust/      ← sibling Rust crate (path dep for local dev)
-└── spec/      ← conformance fixtures (git submodule at golang/spec/)
+└── golang/    ← this repo
+    ├── spec/  ← 含 conformance fixtures 的固定版本 submodule
+    └── crates/cabi/
 ```
+
+```bash
+git submodule update --init spec
+cargo build --release -p ktav-cabi
+```
+
+库从 `target/release` 加载（或从 `$CARGO_TARGET_DIR/release` 加载）。
+只有需要覆盖默认路径时才设置 `KTAV_LIB_PATH`。
 
 Rust C ABI crate（`crates/cabi/`）默认依赖 crates.io 上发布的 `ktav`。
 跨仓库本地改动时，把 `Cargo.toml` 的
@@ -99,8 +107,12 @@ go test -run TestSmoke ./...    # 按名称过滤
 go test -run Conformance ./...  # 只跑 spec fixtures
 ```
 
-当 `KTAV_LIB_PATH` 或 `KTAV_SPEC_ROOT` 未设置时，相关测试会**跳过**
-而不是失败 —— 纯净 checkout 下 `go test` 也保持绿色。
+运行任何测试前，`TestMain` 都会检查
+`spec/versions/0.8/tests` 中的语料；文件、配套文件缺失或 schema、
+数量错误都会立即失败。没有 `KTAV_SPEC_ROOT` 覆盖项。原生库默认从
+`target/release` 加载
+（或从 `$CARGO_TARGET_DIR/release` 加载）；`KTAV_LIB_PATH` 可选地覆盖
+库路径。需要 C ABI 的测试在库缺失时会失败，不会跳过。
 
 ### Lint
 

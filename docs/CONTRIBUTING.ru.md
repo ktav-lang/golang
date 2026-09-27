@@ -60,19 +60,28 @@ cache / download логика.
 Нужно:
 
 - Go **1.21+**.
-- Rust toolchain через [`rustup`](https://rustup.rs/). MSRV: **1.70**.
+- Rust toolchain через [`rustup`](https://rustup.rs/). MSRV: **1.71**.
 - `git`.
 
 Рабочая раскладка — Go-пакет грузит собранный Rust-ом `ktav_cabi` cdylib
-через `purego`. Рядом с репо клонируй spec (используется conformance-
-тестами), либо подними submodule:
+через `purego`. Инициализируй закреплённый submodule spec; соседняя
+копия spec не используется:
 
 ```
 ktav-lang/
-├── golang/    ← this repo
-├── rust/      ← sibling Rust crate (path dep for local dev)
-└── spec/      ← conformance fixtures (git submodule at golang/spec/)
+└── golang/    ← this repo
+    ├── spec/  ← закреплённый submodule с conformance-фикстурами
+    └── crates/cabi/
 ```
+
+```bash
+git submodule update --init spec
+cargo build --release -p ktav-cabi
+```
+
+Библиотека загружается из `target/release` (или
+`$CARGO_TARGET_DIR/release`). `KTAV_LIB_PATH` задаёт путь только при
+необходимости переопределить его.
 
 Rust C ABI крейт (`crates/cabi/`) по умолчанию тянет опубликованный
 `ktav` с crates.io. Для локальных правок между репо переключи
@@ -105,9 +114,14 @@ go test -run TestSmoke ./...    # фильтр по имени
 go test -run Conformance ./...  # только spec-фикстуры
 ```
 
-Если `KTAV_LIB_PATH` или `KTAV_SPEC_ROOT` не заданы — соответствующие
-тесты **скипаются**, а не падают, чтобы `go test` на голой копии
-оставался зелёным.
+До запуска тестов `TestMain` проверяет корпус в
+`spec/versions/0.8/tests`; отсутствие файлов или companions, ошибки
+схемы или количества сразу приводят к ошибке. Переопределения
+`KTAV_SPEC_ROOT` нет. По умолчанию
+нативная библиотека ищется в `target/release` (или
+`$CARGO_TARGET_DIR/release`); `KTAV_LIB_PATH` позволяет переопределить
+путь. Тесты, которым нужен C ABI, завершаются ошибкой, если библиотеки
+нет, а не пропускаются.
 
 ### Линт
 

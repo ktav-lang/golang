@@ -61,19 +61,27 @@ consumers to download a library that doesn't match their code.
 You need:
 
 - Go **1.21+**.
-- A Rust toolchain via [`rustup`](https://rustup.rs/). MSRV: **1.70**.
+- A Rust toolchain via [`rustup`](https://rustup.rs/). MSRV: **1.71**.
 - `git`.
 
 Layout during development — the Go package loads the Rust-built
-`ktav_cabi` cdylib via `purego`. Clone the sibling spec repo (used by
-conformance tests) next to this one or initialise the submodule:
+`ktav_cabi` cdylib via `purego`. Initialise the pinned spec submodule;
+an adjacent spec checkout is not used:
 
 ```
 ktav-lang/
-├── golang/    ← this repo
-├── rust/      ← sibling Rust crate (path dep for local dev)
-└── spec/      ← conformance fixtures (git submodule at golang/spec/)
+└── golang/    ← this repo
+    ├── spec/  ← pinned submodule with conformance fixtures
+    └── crates/cabi/
 ```
+
+```bash
+git submodule update --init spec
+cargo build --release -p ktav-cabi
+```
+
+The library is loaded from `target/release` (or
+`$CARGO_TARGET_DIR/release`). Set `KTAV_LIB_PATH` only to override its path.
 
 The Rust C ABI crate (`crates/cabi/`) depends on the published `ktav`
 crate on crates.io by default. For local cross-repo edits, switch the
@@ -107,9 +115,12 @@ go test -run TestSmoke ./...    # filter by name
 go test -run Conformance ./...  # spec fixtures only
 ```
 
-When either `KTAV_LIB_PATH` or `KTAV_SPEC_ROOT` is unset, the relevant
-tests **skip** rather than fail — so `go test` in a bare checkout stays
-green.
+Before any tests run, `TestMain` validates the corpus at
+`spec/versions/0.8/tests`; missing files, companions, schema, or count
+errors fail immediately. There is no `KTAV_SPEC_ROOT` override. The native library defaults to
+`target/release` (or `$CARGO_TARGET_DIR/release`); `KTAV_LIB_PATH` is an
+optional path override. Tests requiring the C ABI fail if the library is
+missing; they do not skip.
 
 ### Lint
 
