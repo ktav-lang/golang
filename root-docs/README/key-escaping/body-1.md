@@ -5,9 +5,12 @@ Since spec 0.6.4 a literal `.` or `:` inside a key segment is written
 with a backslash:
 
 ```text
-a\.b: v        // key is the single segment "a.b" -> map["a.b"] = "v"
-a\:b: v        // key contains a colon            -> map["a:b"] = "v"
-x.y\.z: v      // split on the first dot only     -> map["x"]["y.z"] = "v"
+## The key is the single segment "a.b".
+a\.b: v
+## The key is the single segment "a:b".
+a\:b: v
+## This is the path ["x", "y.z"].
+x.y\.z: v
 ```
 
 A literal backslash in a key is `\\`.
@@ -19,9 +22,12 @@ A literal backslash in a key is `\\`.
 записываются через backslash:
 
 ```text
-a\.b: v        // key is the single segment "a.b" -> map["a.b"] = "v"
-a\:b: v        // key contains a colon            -> map["a:b"] = "v"
-x.y\.z: v      // split on the first dot only     -> map["x"]["y.z"] = "v"
+## Ключ состоит из одного сегмента "a.b".
+a\.b: v
+## Ключ состоит из одного сегмента "a:b".
+a\:b: v
+## Это путь ["x", "y.z"].
+x.y\.z: v
 ```
 
 Литеральный backslash в ключе пишется как `\\`.
@@ -32,9 +38,12 @@ x.y\.z: v      // split on the first dot only     -> map["x"]["y.z"] = "v"
 自 spec 0.6.4 起,键段内的字面量 `.` 或 `:` 通过反斜杠书写:
 
 ```text
-a\.b: v        // key is the single segment "a.b" -> map["a.b"] = "v"
-a\:b: v        // key contains a colon            -> map["a:b"] = "v"
-x.y\.z: v      // split on the first dot only     -> map["x"]["y.z"] = "v"
+## 键由单个段 "a.b" 组成。
+a\.b: v
+## 键由单个段 "a:b" 组成。
+a\:b: v
+## 这是路径 ["x", "y.z"]。
+x.y\.z: v
 ```
 
 键中的字面量反斜杠写作 `\\`。

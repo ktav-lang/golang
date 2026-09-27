@@ -1,6 +1,7 @@
 package ktav_test
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -19,6 +20,10 @@ const (
 )
 
 func TestMain(m *testing.M) {
+	if err := validateSpec08Corpus(specTestsDir); err != nil {
+		fmt.Fprintf(os.Stderr, "conformance corpus guard failed: %v\n", err)
+		os.Exit(1)
+	}
 	path := filepath.Join(cabiBuildDir, cabiName())
 	if dir := os.Getenv("CARGO_TARGET_DIR"); dir != "" {
 		path = filepath.Join(dir, "release", cabiName())
@@ -39,14 +44,11 @@ func requireCabi(t *testing.T) {
 		p = override
 	}
 	if _, err := os.Stat(p); err != nil {
-		t.Skipf("cabi not built (%s) — run `cargo build --release -p ktav-cabi`", p)
+		t.Fatalf("cabi unavailable (%s): %v; build with `cargo build --release -p ktav-cabi`", p, err)
 	}
 }
 
-func requireSpec(t *testing.T) string {
-	if _, err := os.Stat(specTestsDir); err != nil {
-		t.Skipf("spec submodule missing (%s) — run `git submodule update --init`", specTestsDir)
-	}
+func requireSpec(*testing.T) string {
 	return specTestsDir
 }
 

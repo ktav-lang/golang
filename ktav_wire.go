@@ -3,14 +3,16 @@ package ktav
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"math/big"
+	"sort"
 	"strconv"
 )
 
 // ─── tagged-JSON <-> Go conversion ────────────────────────────────────
 
 // decodeJSON walks the Rust-emitted JSON (with $i / $f tags) into native
-// Go values. Object key order is preserved via orderedMap.
+// Go values. Object key order is not preserved by the returned map.
 func decodeJSON(raw []byte) (any, error) {
 	if len(raw) == 0 {
 		return nil, newError("ktav: empty decode input")
@@ -192,13 +194,88 @@ func flattenAny(v any) any {
 
 // ─── Go → tagged JSON (for Dumps) ─────────────────────────────────────
 
-func encodeTagged(v any) ([]byte, error) {
-	enc, err := toTagged(v)
+func encodeWriterTagged(v any, forceStrings bool) ([]byte, error) {
+	value, err := toTagged(v)
 	if err != nil {
 		return nil, err
 	}
-	return json.Marshal(enc)
+	if !isCompoundRoot(value) {
+		return nil, unrepresentableError("ScalarRoot", nil)
+	}
+	value, err = prepareWriterValue(value, nil, forceStrings)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(value)
 }
+
+func isCompoundRoot(v any) bool {
+	switch t := v.(type) {
+	case []any:
+		return true
+	case map[string]any:
+		if len(t) == 1 {
+			if _, ok := t["$i"]; ok {
+				return false
+			}
+			if _, ok := t["$f"]; ok {
+				return false
+			}
+		}
+		return true
+	default:
+		return false
+	}
+}
+
+func prepareWriterValue(v any, path []string, forceStrings bool) (any, error) {
+	switch t := v.(type) {
+	case map[string]any:
+		if len(t) == 1 {
+			if text, ok := t["$f"].(goFloatPayload); ok && isNonFiniteFloatText(string(text)) {
+				if forceStrings {
+					return string(text), nil
+				}
+				return nil, unrepresentableError("NonFiniteFloat", path)
+			}
+		}
+		keys := make([]string, 0, len(t))
+		for key := range t {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		for _, key := range keys {
+			child := t[key]
+			childPath := append(append([]string(nil), path...), key)
+			if key == "" {
+				return nil, unrepresentableError("EmptyKeyName", childPath)
+			}
+			prepared, err := prepareWriterValue(child, childPath, forceStrings)
+			if err != nil {
+				return nil, err
+			}
+			t[key] = prepared
+		}
+		return t, nil
+	case []any:
+		for i, child := range t {
+			prepared, err := prepareWriterValue(child, path, forceStrings)
+			if err != nil {
+				return nil, err
+			}
+			t[i] = prepared
+		}
+		return t, nil
+	default:
+		return v, nil
+	}
+}
+
+func isNonFiniteFloatText(s string) bool {
+	return s == "NaN" || s == "+Inf" || s == "-Inf"
+}
+
+type goFloatPayload string
 
 func toTagged(v any) (any, error) {
 	switch t := v.(type) {
@@ -294,11 +371,17 @@ func taggedF(text string) map[string]any {
 }
 
 func floatTag(f float64) (any, error) {
-	if isNaN(f) || isInf(f) {
-		return nil, newError("ktav: NaN / Inf are not representable")
+	if isNaN(f) {
+		return map[string]any{"$f": goFloatPayload("NaN")}, nil
+	}
+	if math.IsInf(f, 1) {
+		return map[string]any{"$f": goFloatPayload("+Inf")}, nil
+	}
+	if math.IsInf(f, -1) {
+		return map[string]any{"$f": goFloatPayload("-Inf")}, nil
 	}
 	s := formatFloat(f)
-	return taggedF(s), nil
+	return map[string]any{"$f": goFloatPayload(s)}, nil
 }
 
 // ─── misc small helpers ───────────────────────────────────────────────

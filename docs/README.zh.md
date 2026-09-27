@@ -100,15 +100,24 @@ doc := map[string]any{
 out, _ := ktav.Dumps(doc)
 fmt.Print(out)
 // name: frontend
-// port: 8443
-// tls: true
-// ratio: 0.95
-// upstreams: [
-//     { host: a.example  port: 1080 }
-//     { host: b.example  port: 1080 }
-// ]
 // notes: null
+// port: 8443
+// ratio: 0.95
+// tls: true
+// upstreams: [
+//     {
+//         host: a.example
+//         port: 1080
+//     }
+//     {
+//         host: b.example
+//         port: 1080
+//     }
+// ]
 ```
+
+`encoding/json` 会对 Go map 的键排序，因此输出顺序是确定的；
+`map[string]any` 本身不保留插入顺序。
 
 完整可运行示例:[`examples/basic`](../examples/basic/main.go)。
 
@@ -121,47 +130,78 @@ fmt.Print(out)
 | `LoadsInto(s string, target any) error` | 解析到任意 `target`(struct、map 等),通过 `encoding/json`。 |
 | `Dumps(v any) (string, error)` | 将 Go 值渲染为 Ktav 文本。顶层必须为对象或数组。 |
 | `DumpsForceStrings(v any) (string, error)` | 同 `Dumps`,但所有叶标量(integer、float、bool、null)通过 `::` 强制为 String。复合值保留其结构。 |
-| `EmitCanonical(v any) (string, error)` | 把 Go 值渲染为规范 Ktav(spec § 5.9)。键顺序遵循 Go map 迭代(`map[string]any` 为字母序)。 |
+| `EmitCanonical(v any) (string, error)` | 把 Go 值渲染为规范 Ktav(spec § 5.9)。`encoding/json` 会按字典序排列 Go map 的字符串键。 |
 | `CanonicalFromSource(src string) (string, error)` | 解析 Ktav 并立即输出规范形式，保留源文件的键顺序。 |
 | `FormatSource(src string) (string, error)` | 把 Ktav 源文本格式化为规范化写法，**保留全部注释**。见下文。 |
 
 ## 格式化 —— 规范写法，保留注释
 
-`FormatSource` 与 `EmitCanonical` 是两种不同的操作,值得分清需要哪一个:
+`FormatSource` 与 `EmitCanonical` 是不同的操作：
 
-- **`EmitCanonical`** 接受 Go 值并写出规范形式。值里不存在注释,
-  因此没有任何注释可以保留。
-- **`FormatSource`** 接受源**文本**,重写其写法,同时**逐字保留每条
-  注释**(spec § 3.4:注释独占一整行)。键顺序绝不改变。
+- **`EmitCanonical`** 接受 Go 值并写出规范形式。值中没有注释，因而
+  无法保留注释。
+- **`FormatSource`** 接受源文本并规范其写法，同时保留每条独占整行的
+  注释（spec § 3.4）。它与 `CanonicalFromSource` 都保留源键顺序。
 
-```go
-out, err := ktav.FormatSource("## why\na:   {x: 1}\n")
-// "## why\na: {\n    x: 1\n}\n"
-// the comment survives; the inline compound is expanded to canonical
-// multi-line form and re-indented
-```
-
-空行作为分组提示保留下来,但连续两行及以上会合并为恰好一行,紧贴括号
-内侧的空行填充会被丢弃:
+以下示例使用这些导入：
 
 ```go
-ktav.FormatSource("## keep me\n\n\nport: 8080\n")
-// "## keep me\n\nport: 8080\n" — two blank lines became one
-```
+import (
+    "fmt"
 
-因此格式化是一个不动点:
+    ktav "github.com/ktav-lang/golang"
+)
+```
 
 ```go
-ktav.FormatSource(ktav.FormatSource(x)) == ktav.FormatSource(x)
+func formatExample() error {
+	out, err := ktav.FormatSource("## why\na:   {x: 1}\n")
+	if err != nil {
+		return err
+	}
+	fmt.Print(out)
+	return nil
+}
 ```
 
-对于没有注释也没有空行的文档,结果与同一文本的 `CanonicalFromSource`
-相同。
+空行用于提示分组：连续两行及以上会缩减为一行，紧贴括号内侧的空白
+填充会被删除。
+
+```go
+func formatBlankLinesExample() error {
+	out, err := ktav.FormatSource("## keep me\n\n\nport: 8080\n")
+	if err != nil {
+		return err
+	}
+	fmt.Print(out)
+	return nil
+}
+```
+
+格式化会达到不动点。再次传入格式化器之前，先处理 `(string, error)`
+返回值：
+
+```go
+func isFixedPoint(src string) (bool, error) {
+	once, err := ktav.FormatSource(src)
+	if err != nil {
+		return false, err
+	}
+	twice, err := ktav.FormatSource(once)
+	if err != nil {
+		return false, err
+	}
+	return once == twice, nil
+}
+```
+
+没有注释和空行时，结果与同一文本的 `CanonicalFromSource` 相同。
 
 ## 结构化错误
 
-每一次失败都携带与其他 Ktav 绑定相同的结构化信封,因此工具可以针对
-字段做处理,而不必解析消息文本。`Loads`、`Dumps` 等返回 `*Error`:
+原生解析器和 writer 的失败会携带 Ktav 绑定共用的结构化信封,工具可以
+直接处理字段,而不必解析消息文本。其他失败,例如原生库加载/下载和
+Go JSON 转换错误,仍是普通 Go error,不保证为 `*ktav.Error`:
 
 ```go
 if _, err := ktav.Loads("a: 1\na: 2\n"); err != nil {
@@ -176,9 +216,9 @@ if _, err := ktav.Loads("a: 1\na: 2\n"); err != nil {
 
 | 字段 | 含义 |
 | --- | --- |
-| `Msg` | 来自核心自身的错误渲染文本。永不为空;`Error()` 返回的就是它。 |
-| `Class` | 结构化错误类别 —— `DuplicateKey`、`Unrepresentable`、`Message`。 |
-| `Reason` | writer 侧的原因码(spec § 5.9.0),如 `NonFiniteFloat`;信封为 null 时是 `""`。 |
+| `Msg` | 人类可读的错误文本。原生错误使用核心渲染；host 合成的错误使用绑定自身的措辞。 |
+| `Class` | 错误类别 —— `DuplicateKey`、`Unrepresentable`、`UnrepresentableAt`、`InvalidUtf8`、`Message`。 |
+| `Reason` | Host writer 的原因码包括 `NonFiniteFloat`、`ScalarRoot` 和 `EmptyKeyName`。`InvalidUtf8` 是 source-error class，reason 为空。 |
 | `Line` | 1 起算的源行号;信封为 null 时是 `0`。 |
 | `LineText` | 出错那一行的文本。 |
 | `Span` | `*Span` —— UTF-8 源文本中的字节偏移。 |
@@ -194,8 +234,9 @@ if _, err := ktav.Loads("a: 1\na: 2\n"); err != nil {
 - **`Path` 是键段切片,绝不是拼接后的字符串。** 字面名为 `a.b` 的键
   是**一个**段,不可能与两段路径混淆 —— 没有分隔符,也就无可歧义。
 
-`Msg` 是从核心逐字取得的,并非在此处拼装,因此同一份文档在任何 Ktav
-绑定中都产生相同的错误文本。
+对于原生核心的结构化错误,`Msg` 是逐字取得的,并非在此处拼装,因此同一
+份文档在任何 Ktav 绑定中都会产生相同的错误文本。加载器、Go 转换和
+host 合成的校验错误不在此跨绑定保证范围内。
 
 ## 类型映射
 
@@ -203,25 +244,31 @@ if _, err := ktav.Loads("a: 1\na: 2\n"); err != nil {
 | ---------------- | ------------------------------------------------ |
 | `null`           | `nil`                                            |
 | `true` / `false` | `bool`                                           |
-| integer scalar   | `int64`（可容纳）或 `*big.Int`                   |
+| integer scalar   | `int64`（范围内）；否则为 `string`                |
 | float scalar     | `float64`                                        |
 | 裸标量           | `string`                                         |
 | `[ ... ]`        | `[]any`                                          |
-| `{ ... }`        | `map[string]any`（保留插入顺序）                 |
+| `{ ... }`        | `map[string]any`（Go map，不保证插入顺序）        |
 
-spec 0.5 中 integer 与 float 从标量体的词法形式推断（无类型标记）。编码时
-Go `int*` / `uint*` / `*big.Int` → integer scalar；`float32` / `float64`
-→ float scalar；`string` 保持裸标量。`NaN` 与 `±Inf` 会被拒绝。结构体先
-走 `encoding/json`，`json:"..."` tag 生效。
+spec 0.8 中 integer 与 float 从标量体的词法形式推断（无类型标记）。
+超出 `int64` 范围的 integer 会解析为 String。Go `int*` / `uint*` /
+`*big.Int` 编码为 integer scalar，但超范围的 `*big.Int` 再解析时会
+成为 String；`float32` / `float64` 编码为 float scalar，`string` 保持
+裸标量。`Dumps` 和 `EmitCanonical` 会拒绝 `NaN` 与 `±Inf`；
+`DumpsForceStrings` 会将它们转换为 String 叶值。结构体先走
+`encoding/json`，`json:"..."` tag 生效。
 
 ## 键的转义
 
 自 spec 0.6.4 起,键段内的字面量 `.` 或 `:` 通过反斜杠书写:
 
 ```text
-a\.b: v        // key is the single segment "a.b" -> map["a.b"] = "v"
-a\:b: v        // key contains a colon            -> map["a:b"] = "v"
-x.y\.z: v      // split on the first dot only     -> map["x"]["y.z"] = "v"
+## 键由单个段 "a.b" 组成。
+a\.b: v
+## 键由单个段 "a:b" 组成。
+a\:b: v
+## 这是路径 ["x", "y.z"]。
+x.y\.z: v
 ```
 
 键中的字面量反斜杠写作 `\\`。

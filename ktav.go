@@ -14,7 +14,7 @@
 //	─────────────── ───────────────────────────
 //	null              nil
 //	true / false      bool
-//	integer scalar    int64 if it fits, else *big.Int
+//	integer scalar    int64 when it fits the implementation's range
 //	float scalar      float64
 //	bare scalar       string
 //	[ ... ]           []any
@@ -22,8 +22,10 @@
 //
 // Under spec 0.5, integer and float values are inferred from the
 // scalar body's lexical form (bare `42` → Integer, `3.14` → Float).
-// The typed markers `:i` / `:f` no longer exist. Integers that
-// overflow i64 fall back to String (not *big.Int).
+// The typed markers `:i` / `:f` no longer exist. Under spec § 5.2,
+// integer spellings outside the native int64 range are inferred as
+// Strings. Go *big.Int values can be encoded, but an out-of-range value
+// round-trips through Loads as a String.
 //
 // Key order from the source is **not** preserved on either side: decode
 // returns a plain `map[string]any`, and encode goes through
@@ -32,11 +34,12 @@
 //
 // On encode, Go *big.Int always emits an integer scalar; Go int /
 // int64 / uint64 emit an integer scalar; Go float64 emits a float
-// scalar. NaN / ±Inf are rejected. Top-level value must encode to a
-// Ktav object (i.e. a map[string]any or struct) or a Ktav array
-// (i.e. a []any or any other JSON-encodable slice). Top-level Arrays
-// render as bare item-per-line — no surrounding `[...]` brackets, per
-// spec § 5.0.1.
+// scalar. NaN / ±Inf are rejected by Dumps and EmitCanonical, but
+// coerced to strings by DumpsForceStrings. The top-level value must
+// encode to a Ktav object (i.e. a map[string]any or struct) or a Ktav array
+// (i.e. a []any or any other JSON-encodable slice). Root arrays follow
+// spec § 5.9.3: delimiters are added when needed to disambiguate the
+// first item.
 //
 // [FormatSource] reformats Ktav source text (comments preserved,
 // fixed point); [CanonicalFromSource] re-emits it canonically.
@@ -49,6 +52,9 @@ import (
 // Loads parses a Ktav document and returns its Go representation (see
 // package doc for the mapping).
 func Loads(src string) (any, error) {
+	if err := invalidUTF8Error(src); err != nil {
+		return nil, err
+	}
 	js, err := loadsJSON([]byte(src))
 	if err != nil {
 		return nil, err
@@ -60,6 +66,9 @@ func Loads(src string) (any, error) {
 // rejects lossy numeric spellings while preserving the same Go type mapping
 // as Loads.
 func LoadsStrict(src string) (any, error) {
+	if err := invalidUTF8Error(src); err != nil {
+		return nil, err
+	}
 	js, err := loadsStrictJSON([]byte(src))
 	if err != nil {
 		return nil, err
@@ -73,11 +82,12 @@ func LoadsStrict(src string) (any, error) {
 //	var cfg MyConfig
 //	_ = ktav.LoadsInto(src, &cfg)
 //
-// `:i` scalars become JSON numbers or JSON strings (if they exceed
-// json.Number precision); `:f` scalars become JSON numbers. Custom
-// types wanting bigint precision should unmarshal into a json.Number
-// field.
+// Numeric scalars are flattened to JSON numbers, preserving their text
+// through json.Number where the destination type supports it.
 func LoadsInto(src string, target any) error {
+	if err := invalidUTF8Error(src); err != nil {
+		return err
+	}
 	js, err := loadsJSON([]byte(src))
 	if err != nil {
 		return err
@@ -91,10 +101,10 @@ func LoadsInto(src string, target any) error {
 
 // Dumps renders a Go value as a Ktav document. The top-level must
 // encode to a JSON object (map[string]any, struct, etc.) or a JSON
-// array (a slice). Top-level Arrays render as bare item-per-line —
-// no surrounding `[...]` brackets, per spec § 5.0.1.
+// array (a slice). Root arrays follow spec § 5.9.3: delimiters are
+// added when needed to disambiguate the first item.
 func Dumps(v any) (string, error) {
-	tagged, err := encodeTagged(v)
+	tagged, err := encodeWriterTagged(v, false)
 	if err != nil {
 		return "", err
 	}
@@ -118,7 +128,7 @@ func Dumps(v any) (string, error) {
 //
 // Top-level shape rules match `Dumps`: object or array.
 func DumpsForceStrings(v any) (string, error) {
-	tagged, err := encodeTagged(v)
+	tagged, err := encodeWriterTagged(v, true)
 	if err != nil {
 		return "", err
 	}
@@ -141,7 +151,7 @@ func DumpsForceStrings(v any) (string, error) {
 //
 // Top-level shape rules match `Dumps`: object or array.
 func EmitCanonical(v any) (string, error) {
-	tagged, err := encodeTagged(v)
+	tagged, err := encodeWriterTagged(v, false)
 	if err != nil {
 		return "", err
 	}
@@ -156,11 +166,14 @@ func EmitCanonical(v any) (string, error) {
 // preserving every comment verbatim (spec § 3.4: a comment owns a whole
 // line). Blank lines survive as a grouping hint, but a run of two or
 // more collapses to exactly one and blank padding immediately inside a
-// bracket is dropped, so formatting is a fixed point:
-// FormatSource(FormatSource(x)) == FormatSource(x). Key order is never
-// changed (spec § 5.9). For a document with no comments and no blank
-// lines, the result equals CanonicalFromSource of the same text.
+// bracket is dropped. Applying FormatSource to its output produces the
+// same result. Key order is never changed (spec § 5.9). For documents
+// without comments or blank lines, the result equals CanonicalFromSource
+// of the same text.
 func FormatSource(src string) (string, error) {
+	if err := invalidUTF8Error(src); err != nil {
+		return "", err
+	}
 	out, err := formatSource([]byte(src))
 	if err != nil {
 		return "", err
@@ -173,6 +186,9 @@ func FormatSource(src string) (string, error) {
 // order of object keys. This is equivalent to `ktav parse | ktav
 // emit-canonical` on the command line.
 func CanonicalFromSource(src string) (string, error) {
+	if err := invalidUTF8Error(src); err != nil {
+		return "", err
+	}
 	js, err := loadsJSON([]byte(src))
 	if err != nil {
 		return "", err

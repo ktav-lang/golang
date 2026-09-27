@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 )
 
 // Error is the binding's error type, carrying the nine other native
@@ -40,6 +41,48 @@ func newError(msg string) *Error { return &Error{Msg: msg} }
 
 func newErrorf(format string, args ...any) *Error {
 	return &Error{Msg: fmt.Sprintf(format, args...)}
+}
+
+func invalidUTF8Error(src string) *Error {
+	if utf8.ValidString(src) {
+		return nil
+	}
+	for offset := 0; offset < len(src); {
+		_, size := utf8.DecodeRuneInString(src[offset:])
+		if size == 1 && src[offset] >= utf8.RuneSelf {
+			return &Error{
+				Msg:         "InvalidUtf8: input is not valid UTF-8",
+				Class:       "InvalidUtf8",
+				Span:        &Span{Start: offset, End: offset},
+				SpecSection: "§6.15",
+			}
+		}
+		offset += size
+	}
+	return nil
+}
+
+func unrepresentableError(reason string, path []string) *Error {
+	var message string
+	switch reason {
+	case "ScalarRoot":
+		message = "ScalarRoot: the document root is not an Object or an Array (spec § 5.9.0)"
+	case "EmptyKeyName":
+		message = "EmptyKeyName: an Object pair's name is the empty string (spec § 5.9.0)"
+	case "NonFiniteFloat":
+		message = "NonFiniteFloat: a Float is NaN or ±Infinity (spec § 5.9.0)"
+	}
+	if reason != "ScalarRoot" && len(path) > 0 {
+		quoted, _ := json.Marshal(path)
+		message += " at " + string(quoted)
+	}
+	return &Error{
+		Msg:         message,
+		Class:       "UnrepresentableAt",
+		Reason:      reason,
+		Path:        append([]string{}, path...),
+		SpecSection: "§5.9.0",
+	}
 }
 
 // envelopeJSON is the wire shape of the native error envelope

@@ -9,7 +9,7 @@
 | `:f <number>`    | `float64`                                       |
 | bare scalar      | `string`                                        |
 | `[ ... ]`        | `[]any`                                         |
-| `{ ... }`        | `map[string]any` (insertion order preserved)    |
+| `{ ... }`        | `map[string]any`                                |
 
 >>>>> lang=ru
 ### Соответствие типов
@@ -22,7 +22,7 @@
 | `:f <number>`    | `float64`                                       |
 | scalar без маркера | `string`                                      |
 | `[ ... ]`        | `[]any`                                         |
-| `{ ... }`        | `map[string]any` (порядок вставки сохраняется)  |
+| `{ ... }`        | `map[string]any`                                |
 
 >>>>> lang=zh
 ### 类型映射
@@ -35,5 +35,5 @@
 | `:f <number>`    | `float64`                                         |
 | 裸标量           | `string`                                          |
 | `[ ... ]`        | `[]any`                                           |
-| `{ ... }`        | `map[string]any`(保留插入顺序)                  |
+| `{ ... }`        | `map[string]any`                                |
 

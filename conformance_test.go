@@ -40,7 +40,7 @@ func TestConformanceValid(t *testing.T) {
 		jsonPath := strings.TrimSuffix(ktavPath, ".ktav") + ".json"
 		name := strings.TrimPrefix(ktavPath, specRoot+string(filepath.Separator))
 		t.Run(name, func(t *testing.T) {
-			srcBytes, err := os.ReadFile(ktavPath)
+			srcBytes, err := readFixtureSource(ktavPath)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -175,7 +175,7 @@ func TestConformanceCanonical(t *testing.T) {
 		basePath := strings.TrimSuffix(canonicalPath, ".canonical.ktav") + ".ktav"
 		name := strings.TrimPrefix(canonicalPath, specRoot+string(filepath.Separator))
 		t.Run(name, func(t *testing.T) {
-			src, err := os.ReadFile(basePath)
+			src, err := readFixtureSource(basePath)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -217,33 +217,20 @@ func TestConformanceInvalid(t *testing.T) {
 	for _, p := range cases {
 		name := strings.TrimPrefix(p, specRoot+string(filepath.Separator))
 		t.Run(name, func(t *testing.T) {
-			src, err := os.ReadFile(p)
+			src, err := readFixtureSource(p)
 			if err != nil {
 				t.Fatal(err)
 			}
+			oracleRaw, err := os.ReadFile(strings.TrimSuffix(p, ".ktav") + ".json")
+			if err != nil {
+				t.Fatalf("oracle missing: %v", err)
+			}
 			if _, err := ktav.Loads(string(src)); err == nil {
 				t.Fatalf("expected parse error, got ok\n---\n%s", src)
+			} else if err := assertInvalidOracleError(err, oracleRaw); err != nil {
+				t.Fatal(err)
 			}
 		})
-	}
-}
-
-// reasonFragment maps a fixture's unrepresentable_reason to the message
-// fragment the binding is required to surface. Rust-side rejections
-// carry the spec ErrorKind name verbatim; NonFiniteFloat and ScalarRoot
-// are rejected in Go (ktav.go floatTag) and at the C ABI (top-level
-// shape check) with this binding's own wording. Reasons not yet mapped
-// keep only the generic refuse assertions.
-func reasonFragment(reason string) (string, bool) {
-	switch reason {
-	case "EmptyKeyName":
-		return "EmptyKeyName", true
-	case "NonFiniteFloat":
-		return "NaN / Inf", true
-	case "ScalarRoot":
-		return "object or array", true
-	default:
-		return "", false
 	}
 }
 
@@ -296,7 +283,7 @@ func liftMarker(v any) any {
 	}
 }
 
-// TestConformanceUnrepresentable walks spec 0.7's unrepresentable/
+// TestConformanceUnrepresentable walks spec 0.8's unrepresentable/
 // category: JSON values a conforming WRITER must refuse. The binding
 // must reject them on both writer entry points (Dumps and
 // EmitCanonical) with a *ktav.Error.
@@ -344,14 +331,8 @@ func TestConformanceUnrepresentable(t *testing.T) {
 				if err == nil {
 					t.Fatalf("%s: expected writer to refuse value (reason %s), got ok:\n%s", call.label, reason, out)
 				}
-				var ktavErr *ktav.Error
-				if !errors.As(err, &ktavErr) {
-					t.Fatalf("%s: not *ktav.Error: %T (%v)", call.label, err, err)
-				}
-				if fragment, known := reasonFragment(reason); known {
-					if !strings.Contains(err.Error(), fragment) {
-						t.Fatalf("%s: error %q does not mention %s (expected fragment %q)", call.label, err, reason, fragment)
-					}
+				if err := assertUnrepresentableError(err, reason, call.label); err != nil {
+					t.Fatal(err)
 				}
 				t.Logf("%s refused (reason %s): %v", call.label, reason, err)
 			}
@@ -359,7 +340,7 @@ func TestConformanceUnrepresentable(t *testing.T) {
 	}
 }
 
-// TestConformanceParseableUnrepresentable walks spec 0.7's
+// TestConformanceParseableUnrepresentable walks spec 0.8's
 // parseable-unrepresentable/ category: documents the parser accepts but
 // no canonical writer may emit. Loads must succeed and match the
 // oracle value; CanonicalFromSource must refuse with a *ktav.Error.
@@ -388,7 +369,7 @@ func TestConformanceParseableUnrepresentable(t *testing.T) {
 	for _, p := range cases {
 		name := strings.TrimPrefix(p, specRoot+string(filepath.Separator))
 		t.Run(name, func(t *testing.T) {
-			src, err := os.ReadFile(p)
+			src, err := readFixtureSource(p)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -411,15 +392,25 @@ func TestConformanceParseableUnrepresentable(t *testing.T) {
 
 			if _, err := ktav.CanonicalFromSource(string(src)); err == nil {
 				t.Fatalf("expected canonical emit to refuse (reason %s)\n--- input ---\n%s", reason, src)
+			} else if err := assertUnrepresentableError(err, reason, "CanonicalFromSource"); err != nil {
+				t.Fatal(err)
 			} else {
-				var ktavErr *ktav.Error
-				if !errors.As(err, &ktavErr) {
-					t.Fatalf("not *ktav.Error: %T (%v)", err, err)
-				}
-				if !strings.Contains(err.Error(), reason) {
-					t.Fatalf("canonical emit error %q does not mention reason %s", err, reason)
-				}
 				t.Logf("canonical emit refused (reason %s): %v", reason, err)
+			}
+			for _, call := range []struct {
+				label string
+				fn    func(any) (string, error)
+			}{
+				{"Dumps(Loads value)", ktav.Dumps},
+				{"EmitCanonical(Loads value)", ktav.EmitCanonical},
+			} {
+				out, err := call.fn(got)
+				if err == nil {
+					t.Fatalf("%s: expected writer to refuse value (reason %s), got ok:\n%s", call.label, reason, out)
+				}
+				if err := assertUnrepresentableError(err, reason, call.label); err != nil {
+					t.Fatal(err)
+				}
 			}
 		})
 	}
@@ -452,7 +443,7 @@ func TestConformanceStrictLossy(t *testing.T) {
 	for _, p := range cases {
 		name := strings.TrimPrefix(p, specRoot+string(filepath.Separator))
 		t.Run(name, func(t *testing.T) {
-			src, err := os.ReadFile(p)
+			src, err := readFixtureSource(p)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -493,24 +484,5 @@ func TestConformanceStrictLossy(t *testing.T) {
 					oracle.ExpectedError, oracle.Body, oracle.Canonical)
 			}
 		})
-	}
-}
-
-// TestConformanceCategoryGuard fails when the corpus grows a fixture
-// category this runner does not execute, instead of silently ignoring it.
-func TestConformanceCategoryGuard(t *testing.T) {
-	specRoot := requireSpec(t)
-	known := map[string]bool{
-		"valid": true, "invalid": true, "unrepresentable": true,
-		"parseable-unrepresentable": true, "strict-lossy": true,
-	}
-	entries, err := os.ReadDir(specRoot)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, e := range entries {
-		if e.IsDir() && !known[e.Name()] {
-			t.Errorf("unknown fixture category directory %q: the runner must execute it", e.Name())
-		}
 	}
 }

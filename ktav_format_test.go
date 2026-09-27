@@ -90,7 +90,7 @@ func TestErrorSurfacesStructuredFields(t *testing.T) {
 	}
 }
 
-func TestErrorMessageEnvelope(t *testing.T) {
+func TestScalarRootErrorEnvelope(t *testing.T) {
 	requireCabi(t)
 	_, err := ktav.Dumps("bare-string")
 	if err == nil {
@@ -100,14 +100,14 @@ func TestErrorMessageEnvelope(t *testing.T) {
 	if !errors.As(err, &ke) {
 		t.Fatalf("errors.As(*ktav.Error) failed: %v", err)
 	}
-	if ke.Class != "Message" {
-		t.Errorf("Class = %q, want \"Message\"", ke.Class)
+	if ke.Class != "UnrepresentableAt" || ke.Reason != "ScalarRoot" || ke.SpecSection != "§5.9.0" {
+		t.Errorf("unexpected scalar-root envelope: %#v", ke)
 	}
-	if !strings.Contains(ke.Body, "object or array") {
-		t.Errorf("Body = %q, want it to contain \"object or array\"", ke.Body)
+	if ke.Path == nil || len(ke.Path) != 0 || ke.Span != nil || ke.Line != 0 {
+		t.Errorf("unexpected scalar-root location: %#v", ke)
 	}
-	if !strings.Contains(ke.Error(), "object or array") {
-		t.Errorf("Error() = %q, want it to contain \"object or array\"", ke.Error())
+	if !strings.Contains(ke.Error(), "ScalarRoot") {
+		t.Errorf("Error() = %q, want ScalarRoot reason", ke.Error())
 	}
 }
 

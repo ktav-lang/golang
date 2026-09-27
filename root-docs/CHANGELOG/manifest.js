@@ -1,7 +1,7 @@
 export default [
   "intro",
   "unreleased-added",
-  "unreleased-changed",
+  "v0-8-0",
   "v0-6-4",
   "v0-6-1",
   "v0-6-0",

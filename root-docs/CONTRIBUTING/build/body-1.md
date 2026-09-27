@@ -10,10 +10,13 @@ export KTAV_LIB_PATH="$PWD/target/release/libktav_cabi.so"   # Linux
 #      ="$PWD/target/release/libktav_cabi.dylib"             # macOS
 #      ="$PWD/target/release/ktav_cabi.dll"                  # Windows
 
-# 3. For conformance tests, point at the spec submodule.
+# 3. Initialize the pinned spec corpus used by conformance tests.
 git submodule update --init
-export KTAV_SPEC_ROOT="$PWD/spec/versions/0.5/tests"
 ```
+
+`TestMain` uses the fixed path `spec/versions/0.8/tests`; there is no
+`KTAV_SPEC_ROOT` override. The conformance guard checks the known category
+manifest and fixture structure so corpus changes cannot be silently skipped.
 
 >>>>> lang=ru
 ### Сборка
@@ -27,10 +30,13 @@ export KTAV_LIB_PATH="$PWD/target/release/libktav_cabi.so"   # Linux
 #      ="$PWD/target/release/libktav_cabi.dylib"             # macOS
 #      ="$PWD/target/release/ktav_cabi.dll"                  # Windows
 
-# 3. Для conformance-тестов указать путь к spec-submodule.
+# 3. Инициализировать закреплённый корпус для conformance-тестов.
 git submodule update --init
-export KTAV_SPEC_ROOT="$PWD/spec/versions/0.5/tests"
 ```
+
+`TestMain` использует фиксированный путь `spec/versions/0.8/tests`;
+переменной `KTAV_SPEC_ROOT` нет. Conformance guard проверяет известные
+категории и структуру fixtures, чтобы изменения корпуса не пропускались молча.
 
 >>>>> lang=zh
 ### 构建
@@ -44,8 +50,11 @@ export KTAV_LIB_PATH="$PWD/target/release/libktav_cabi.so"   # Linux
 #      ="$PWD/target/release/libktav_cabi.dylib"             # macOS
 #      ="$PWD/target/release/ktav_cabi.dll"                  # Windows
 
-# 3. 运行 conformance 测试时指向 spec submodule。
+# 3. 初始化 conformance 测试使用的固定版本语料。
 git submodule update --init
-export KTAV_SPEC_ROOT="$PWD/spec/versions/0.5/tests"
 ```
+
+`TestMain` 使用固定路径 `spec/versions/0.8/tests`，不支持
+`KTAV_SPEC_ROOT` 覆盖。Conformance guard 会检查已知类别清单和 fixture
+结构，避免语料变更被静默跳过。
 

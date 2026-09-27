@@ -91,10 +91,13 @@ export KTAV_LIB_PATH="$PWD/target/release/libktav_cabi.so"   # Linux
 #      ="$PWD/target/release/libktav_cabi.dylib"             # macOS
 #      ="$PWD/target/release/ktav_cabi.dll"                  # Windows
 
-# 3. For conformance tests, point at the spec submodule.
+# 3. Initialize the pinned spec corpus used by conformance tests.
 git submodule update --init
-export KTAV_SPEC_ROOT="$PWD/spec/versions/0.5/tests"
 ```
+
+`TestMain` uses the fixed path `spec/versions/0.8/tests`; there is no
+`KTAV_SPEC_ROOT` override. The conformance guard checks the known category
+manifest and fixture structure so corpus changes cannot be silently skipped.
 
 ### Test
 
@@ -123,8 +126,9 @@ CI runs the same commands; run them locally before pushing.
 
 - **Wire format.** Rust and Go exchange JSON over the FFI boundary,
   with `{"$i":"..."}` / `{"$f":"..."}` wrappers for integers / floats
-  (spec 0.5: inferred from scalar form, no `:i`/`:f` markers in the
-  text). This preserves arbitrary precision through encoding / decoding.
+  (spec 0.8: inferred from scalar form, no `:i`/`:f` markers in the
+  text). The wire wrappers preserve Go integer precision; Ktav integer
+  scalars outside `int64` parse as Strings.
 - **Memory ownership.** Rust allocates the output buffer; Go copies it
   into a Go slice and immediately calls `ktav_free` on the Rust side.
   No buffer is long-lived across the FFI boundary.

@@ -83,10 +83,13 @@ export KTAV_LIB_PATH="$PWD/target/release/libktav_cabi.so"   # Linux
 #      ="$PWD/target/release/libktav_cabi.dylib"             # macOS
 #      ="$PWD/target/release/ktav_cabi.dll"                  # Windows
 
-# 3. 运行 conformance 测试时指向 spec submodule。
+# 3. 初始化 conformance 测试使用的固定版本语料。
 git submodule update --init
-export KTAV_SPEC_ROOT="$PWD/spec/versions/0.5/tests"
 ```
+
+`TestMain` 使用固定路径 `spec/versions/0.8/tests`，不支持
+`KTAV_SPEC_ROOT` 覆盖。Conformance guard 会检查已知类别清单和 fixture
+结构，避免语料变更被静默跳过。
 
 ### 测试
 
@@ -113,8 +116,9 @@ CI 跑同样的命令；push 前本地先过一遍。
 ## 架构说明
 
 - **Wire 格式。** Rust 与 Go 在 FFI 边界用 JSON 交换，用
-  `{"$i":"..."}` / `{"$f":"..."}` 包装 integer / float（spec 0.5：
-  从标量词法形式推断，文本中不再有 `:i`/`:f` 标记）。保留任意精度。
+  `{"$i":"..."}` / `{"$f":"..."}` 包装 integer / float（spec 0.8：
+  从标量词法形式推断，文本中不再有 `:i`/`:f` 标记）。Wire 包装保留
+  Go integer 精度；超出 `int64` 范围的 Ktav integer scalar 会解析为 String。
 - **内存所有权。** Rust 分配输出 buffer；Go 拷贝到 slice 后立刻回调
   `ktav_free`。跨 FFI 边界无长期共享内存。
 - **加载器。** `internal/native` 通过 `sync.Once` 在每个进程 dlopen

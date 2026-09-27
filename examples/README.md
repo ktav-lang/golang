@@ -15,4 +15,4 @@ go run ./examples/basic
 
 | Directory | Shows                                                    |
 | --------- | -------------------------------------------------------- |
-| `basic/`  | `Loads` + `Dumps` round-trip with the type-marker demos. |
+| `basic/`  | `Loads` + `Dumps` round-trip with inferred scalar types. |

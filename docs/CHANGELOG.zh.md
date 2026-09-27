@@ -12,51 +12,29 @@ MINOR 递进视为破坏性变更。
 
 ## 未发布
 
-### 新增
+## 0.8.0 — 2026-09-27
 
-- **`FormatSource(s string) (string, error)`** —— 新的 C ABI 符号
-  `ktav_format`,作为保留注释的 Ktav 源文本格式化器对外暴露。每条注释
-  都逐字保留(spec § 3.4:注释独占一整行);空行作为分组提示保留,但
-  连续两行及以上会合并为恰好一行,紧贴括号内侧的空行填充会被丢弃,
-  因此格式化是一个不动点:
-  `FormatSource(FormatSource(x)) == FormatSource(x)`。键顺序绝不改变
-  (spec § 5.9);对于没有注释也没有空行的文档,输出等同于同一文本的
-  `CanonicalFromSource`。
+此版本将 Go 绑定从 `ktav 0.7.1` / spec 0.7.0 基线更新至
+`ktav 0.8.0` / spec 0.8.0。
 
 ### 变更
 
-- 跟随 `ktav 0.7.1` 与 spec **0.7.0**(spec 子模块固定在 `v0.7.0`);
-  依赖下限从 `0.7` 提高,绑定自身的版本未变。Go API 其余部分不变 ——
-  quoted 键段(spec 0.7 § 5.3.3)与 `\uXXXX` escape(§ 3.7.1)经由
-  Rust 核心到达,因此 0.7 新增的错误类别(§§ 6.11–6.16)不需要新的
-  Go 侧接口。
-- `crates/cabi` 改为单次调用 `ktav::declare_cabi!()`(ktav 的 `cabi`
-  特性),取代手写的 C ABI 垫片;导出的符号集(`ktav_loads`、
-  `ktav_loads_strict`、`ktav_dumps`、`ktav_dumps_force_strings`、
-  `ktav_emit_canonical`、`ktav_format`、`ktav_canonical_from_source`、
-  `ktav_free`、`ktav_version`、`ktav_abi_version`)不变,因此绑定 API
-  不受影响。依赖下限提升至 `ktav 0.8`,spec 子模块重新固定到 `v0.8.0`
-  (新增 § 5.2:带有多余前导零的十进制数解析为 String,而非 Integer)。
-- 包版本升至 **0.8.0**,与核心和规范同步;预编译库的回退下载现在指向
-  `v0.8.0` 发布资产。
-
-- **破坏性:** 错误通道现在呈现结构化的 ktav 错误信封。`ktav.Error`
-  以一等成员携带信封字段 —— `Class`、`Reason`、`Line`、`LineText`、
-  `Span`、`Path`(精确解码后的键段,绝不是拼接字符串)、`Body`、
-  `Canonical`、`SpecSection` —— 外加 `Msg`,`Error()` 返回的正是它。
-  `Msg` 是核心自身的渲染文本,逐字取得而非在此处重新拼装,因此同一
-  份文档在任何 Ktav 绑定中都产生相同的错误文本。对外的错误文本因此
-  发生变化;跨越这一边界去匹配原始消息字符串并不稳定。此变更是有意
-  为之。
-- Conformance 运行器读取 `spec/versions/0.8/tests`(子模块重新固定到
-  `0.8.0` 之后,它一直静默读取过期的 `0.7` 语料——路径是硬编码的,
-  并非从固定版本推导而来),并执行语料中的每个类别:
-  `unrepresentable/` 与 `parseable-unrepresentable/`(writer 必须拒绝
-  的 JSON 值 / 可解析的值——对 `Dumps` 与 `EmitCanonical` 都作断言),
-  以及新增的 `strict-lossy/`(`Loads` 必须等于 lax 值,`LoadsStrict`
-  必须以匹配的原因、body 与规范形式拒绝),每个类别都逐例断言原因码。
-  一个 guard 测试会在语料中出现无法识别的类别目录时使构建失败,以
-  防止这个问题再次悄然发生。
+- 模块版本及原生库回退下载目标为 `v0.8.0`。
+- 原生依赖下限从 `ktav 0.7.1` 提升至 `0.8.0`，spec 固定到 0.8.0；
+  C ABI 迁移到 `ktav::declare_cabi!()`，导出符号保持不变。
+- `FormatSource` 格式化源文本、保留独占整行的注释及源键顺序，并
+  规范化空行。
+- 错误使用结构化 Ktav 信封。Go 侧写入校验返回带有
+  `NonFiniteFloat`、`ScalarRoot` 和 `EmptyKeyName` 原因码的结构化
+  `*ktav.Error`。无效 UTF-8 源的 class 是 `InvalidUtf8`，reason 为空，
+  它不是 writer reason。库加载/下载错误和 Go JSON 转换错误仍是普通
+  Go error，不保证为 `*ktav.Error`。
+- 一致性运行器针对 `spec/versions/0.8/tests`，覆盖该版本语料中的
+  类别，包括 `strict-lossy`、`unrepresentable` 和
+  `parseable-unrepresentable`。运行器会拒绝未知类别，并验证 fixture
+  schema、预期数量和必需的 companion 文件。运行 conformance 还需要
+  原生库。writer 拒绝及 strict-lossy 测试逐例核对 oracle 中的确切
+  原因/错误码。
 
 ## 0.6.4 — 2026-08-23
 
@@ -255,7 +233,7 @@ Go proxy 会自动索引。
 | `:f <number>`    | `float64`                                         |
 | 裸标量           | `string`                                          |
 | `[ ... ]`        | `[]any`                                           |
-| `{ ... }`        | `map[string]any`(保留插入顺序)                  |
+| `{ ... }`        | `map[string]any`                                |
 
 ### 平台
 

@@ -100,15 +100,24 @@ doc := map[string]any{
 out, _ := ktav.Dumps(doc)
 fmt.Print(out)
 // name: frontend
-// port: 8443
-// tls: true
-// ratio: 0.95
-// upstreams: [
-//     { host: a.example  port: 1080 }
-//     { host: b.example  port: 1080 }
-// ]
 // notes: null
+// port: 8443
+// ratio: 0.95
+// tls: true
+// upstreams: [
+//     {
+//         host: a.example
+//         port: 1080
+//     }
+//     {
+//         host: b.example
+//         port: 1080
+//     }
+// ]
 ```
+
+`encoding/json` сортирует ключи Go-map, поэтому порядок вывода
+детерминирован; сам `map[string]any` не сохраняет порядок вставки.
 
 Полный запускаемый пример — в [`examples/basic`](../examples/basic/main.go).
 
@@ -121,51 +130,83 @@ fmt.Print(out)
 | `LoadsInto(s string, target any) error` | Разобрать в произвольный `target` (struct, map, …) через `encoding/json`. |
 | `Dumps(v any) (string, error)` | Сериализовать Go-значение в Ktav-текст. Верхний уровень должен сериализоваться в объект или массив. |
 | `DumpsForceStrings(v any) (string, error)` | Как `Dumps`, но все leaf-скаляры (integer, float, bool, null) приводятся к String через `::`. Составные значения сохраняют свою структуру. |
-| `EmitCanonical(v any) (string, error)` | Вывести Go-значение в канонический Ktav (spec § 5.9). Порядок ключей следует итерации Go-map (алфавитный для `map[string]any`). |
+| `EmitCanonical(v any) (string, error)` | Вывести Go-значение в канонический Ktav (spec § 5.9). `encoding/json` сортирует строковые ключи Go-map лексикографически. |
 | `CanonicalFromSource(src string) (string, error)` | Разобрать Ktav и сразу вывести каноническую форму, сохраняя порядок ключей источника. |
 | `FormatSource(src string) (string, error)` | Отформатировать Ktav-источник в нормализованное написание, **сохраняя все комментарии**. См. ниже. |
 
 ## Форматирование — каноническое написание с сохранением комментариев
 
-`FormatSource` и `EmitCanonical` — разные операции, и стоит понимать,
-какая нужна:
+`FormatSource` и `EmitCanonical` — разные операции:
 
 - **`EmitCanonical`** принимает Go-значение и пишет каноническую форму.
-  В значении комментариев не существует, поэтому сохранять нечего.
-- **`FormatSource`** принимает исходный *текст* и переписывает его
-  написание, **сохраняя каждый комментарий дословно** (spec § 3.4:
-  комментарий занимает строку целиком). Порядок ключей не меняется.
+  В значении нет комментариев, поэтому сохранить их нельзя.
+- **`FormatSource`** принимает исходный текст и нормализует написание,
+  сохраняя каждый комментарий, занимающий целую строку (spec § 3.4).
+  И он, и `CanonicalFromSource` сохраняют исходный порядок ключей.
+
+Ниже приведены используемые в примерах импорты:
 
 ```go
-out, err := ktav.FormatSource("## why\na:   {x: 1}\n")
-// "## why\na: {\n    x: 1\n}\n"
-// the comment survives; the inline compound is expanded to canonical
-// multi-line form and re-indented
-```
+import (
+    "fmt"
 
-Пустые строки сохраняются как подсказка группировки, но серия из двух и
-более схлопывается ровно в одну, а пустые строки непосредственно внутри
-скобки отбрасываются:
+    ktav "github.com/ktav-lang/golang"
+)
+```
 
 ```go
-ktav.FormatSource("## keep me\n\n\nport: 8080\n")
-// "## keep me\n\nport: 8080\n" — two blank lines became one
+func formatExample() error {
+	out, err := ktav.FormatSource("## why\na:   {x: 1}\n")
+	if err != nil {
+		return err
+	}
+	fmt.Print(out)
+	return nil
+}
 ```
 
-Поэтому форматирование — неподвижная точка:
+Пустые строки служат подсказками группировки: серия из двух и более
+сокращается до одной, а пустая отбивка непосредственно внутри скобок
+удаляется.
 
 ```go
-ktav.FormatSource(ktav.FormatSource(x)) == ktav.FormatSource(x)
+func formatBlankLinesExample() error {
+	out, err := ktav.FormatSource("## keep me\n\n\nport: 8080\n")
+	if err != nil {
+		return err
+	}
+	fmt.Print(out)
+	return nil
+}
 ```
 
-Для документа без комментариев и без пустых строк результат совпадает с
+Форматирование достигает неподвижной точки. Обработайте результат
+`(string, error)`, прежде чем передавать строку форматтеру снова:
+
+```go
+func isFixedPoint(src string) (bool, error) {
+	once, err := ktav.FormatSource(src)
+	if err != nil {
+		return false, err
+	}
+	twice, err := ktav.FormatSource(once)
+	if err != nil {
+		return false, err
+	}
+	return once == twice, nil
+}
+```
+
+Без комментариев и пустых строк результат совпадает с
 `CanonicalFromSource` того же текста.
 
 ## Структурированные ошибки
 
-Каждый сбой несёт тот же структурированный конверт, что и остальные
-биндинги Ktav, поэтому инструмент может работать с полями, а не
-разбирать сообщение. `Loads`, `Dumps` и прочие возвращают `*Error`:
+Сбои нативного парсера и writer'а несут структурированный конверт,
+общий для биндингов Ktav, поэтому инструмент может работать с полями, а
+не разбирать сообщение. Другие сбои, например загрузка/скачивание
+библиотеки и преобразование Go JSON, остаются обычными Go-ошибками и не
+обязаны быть `*ktav.Error`:
 
 ```go
 if _, err := ktav.Loads("a: 1\na: 2\n"); err != nil {
@@ -180,9 +221,9 @@ if _, err := ktav.Loads("a: 1\na: 2\n"); err != nil {
 
 | Поле | Значение |
 | --- | --- |
-| `Msg` | Собственный рендеринг ошибки, полученный из ядра. Никогда не пустой; именно его возвращает `Error()`. |
-| `Class` | Класс структурированной ошибки — `DuplicateKey`, `Unrepresentable`, `Message`. |
-| `Reason` | Код причины на стороне writer'а (spec § 5.9.0), например `NonFiniteFloat`; `""`, когда в конверте null. |
+| `Msg` | Текст ошибки. Для ошибок native-ядра используется рендеринг ядра; host-синтезированные ошибки используют формулировки биндинга. |
+| `Class` | Класс ошибки — `DuplicateKey`, `Unrepresentable`, `UnrepresentableAt`, `InvalidUtf8`, `Message`. |
+| `Reason` | Host-writer использует, например, `NonFiniteFloat`, `ScalarRoot` и `EmptyKeyName`. `InvalidUtf8` — класс ошибки источника с пустым reason. |
 | `Line` | Строка источника, счёт с 1; `0`, когда в конверте null. |
 | `LineText` | Текст ошибочной строки. |
 | `Span` | `*Span` — байтовые смещения в UTF-8-источнике. |
@@ -201,8 +242,10 @@ if _, err := ktav.Loads("a: 1\na: 2\n"); err != nil {
   двухсегментным путём: в проводном контракте нет разделителя, о котором
   можно было бы двусмысленно судить.
 
-`Msg` берётся из ядра дословно, а не собирается здесь, поэтому один и
-тот же документ даёт один и тот же текст ошибки в любом биндинге Ktav.
+Для структурированных ошибок native-ядра `Msg` берётся дословно, а не
+собирается здесь, поэтому один и тот же документ даёт одинаковый текст
+ошибки во всех биндингах Ktav. Ошибки загрузчика, преобразования Go и
+host-синтезированной проверки не входят в эту межъязыковую гарантию.
 
 ## Соответствие типов
 
@@ -210,17 +253,20 @@ if _, err := ktav.Loads("a: 1\na: 2\n"); err != nil {
 | ---------------- | ----------------------------------------------- |
 | `null`           | `nil`                                           |
 | `true` / `false` | `bool`                                          |
-| integer scalar   | `int64` если помещается, иначе `*big.Int`       |
+| integer scalar   | `int64` в диапазоне; иначе `string`             |
 | float scalar     | `float64`                                       |
 | bare scalar      | `string`                                        |
 | `[ ... ]`        | `[]any`                                         |
-| `{ ... }`        | `map[string]any` (порядок вставки сохраняется)  |
+| `{ ... }`        | `map[string]any` (порядок вставки не гарантирован) |
 
-В spec 0.5 integer и float выводятся из лексической формы скалярного тела
-(типизированных маркеров нет). На сериализации Go `int*` / `uint*` /
-`*big.Int` → integer scalar; `float32` / `float64` → float scalar;
-`string` остаётся bare scalar. `NaN` и `±Inf` отвергаются. Структуры
-сначала проходят через `encoding/json`, теги `json:"..."` учитываются.
+В spec 0.8 integer и float выводятся из лексической формы скалярного тела
+(типизированных маркеров нет). Integer вне диапазона `int64` разбирается
+как String. Go `int*` / `uint*` / `*big.Int` сериализуются как integer
+scalar, но `*big.Int` вне диапазона при повторном разборе становится
+String; `float32` / `float64` становятся float scalar, а `string`
+остаётся bare scalar. `Dumps` и `EmitCanonical` отклоняют `NaN` и `±Inf`,
+а `DumpsForceStrings` преобразует их в String-leaf. Структуры сначала
+проходят через `encoding/json`, теги `json:"..."` учитываются.
 
 ## Экранирование в ключах
 
@@ -228,9 +274,12 @@ if _, err := ktav.Loads("a: 1\na: 2\n"); err != nil {
 записываются через backslash:
 
 ```text
-a\.b: v        // key is the single segment "a.b" -> map["a.b"] = "v"
-a\:b: v        // key contains a colon            -> map["a:b"] = "v"
-x.y\.z: v      // split on the first dot only     -> map["x"]["y.z"] = "v"
+## Ключ состоит из одного сегмента "a.b".
+a\.b: v
+## Ключ состоит из одного сегмента "a:b".
+a\:b: v
+## Это путь ["x", "y.z"].
+x.y\.z: v
 ```
 
 Литеральный backslash в ключе пишется как `\\`.

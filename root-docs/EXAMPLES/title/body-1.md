@@ -16,7 +16,7 @@ go run ./examples/basic
 
 | Directory | Shows                                                    |
 | --------- | -------------------------------------------------------- |
-| `basic/`  | `Loads` + `Dumps` round-trip with the type-marker demos. |
+| `basic/`  | `Loads` + `Dumps` round-trip with inferred scalar types. |
 >>>>> lang=ru
 # Примеры
 
@@ -35,7 +35,7 @@ go run ./examples/basic
 
 | Каталог   | Что показывает                                           |
 | --------- | -------------------------------------------------------- |
-| `basic/`  | Round-trip `Loads` + `Dumps` с демо типовых маркеров.    |
+| `basic/`  | Round-trip `Loads` + `Dumps` с выводом типов скаляров.   |
 >>>>> lang=zh
 # 示例
 
@@ -53,4 +53,4 @@ go run ./examples/basic
 
 | 目录        | 演示内容                                                     |
 | --------- | -------------------------------------------------------- |
-| `basic/`  | `Loads` + `Dumps` 往返转换，附带类型标记演示。                         |
+| `basic/`  | `Loads` + `Dumps` 往返转换，演示标量类型推断。                           |

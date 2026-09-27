@@ -100,15 +100,24 @@ doc := map[string]any{
 out, _ := ktav.Dumps(doc)
 fmt.Print(out)
 // name: frontend
-// port: 8443
-// tls: true
-// ratio: 0.95
-// upstreams: [
-//     { host: a.example  port: 1080 }
-//     { host: b.example  port: 1080 }
-// ]
 // notes: null
+// port: 8443
+// ratio: 0.95
+// tls: true
+// upstreams: [
+//     {
+//         host: a.example
+//         port: 1080
+//     }
+//     {
+//         host: b.example
+//         port: 1080
+//     }
+// ]
 ```
+
+`encoding/json` sorts Go map keys, so this output order is deterministic;
+the `map[string]any` itself does not preserve insertion order.
 
 A complete runnable version lives in [`examples/basic`](examples/basic/main.go).
 
@@ -121,51 +130,82 @@ A complete runnable version lives in [`examples/basic`](examples/basic/main.go).
 | `LoadsInto(s string, target any) error` | Parse into an arbitrary `target` (struct, map, …) via `encoding/json`. |
 | `Dumps(v any) (string, error)` | Render a Go value as Ktav text. Top-level must encode to an object or array. |
 | `DumpsForceStrings(v any) (string, error)` | Like `Dumps`, but coerces every leaf scalar (integer, float, bool, null) to a String via the raw `::` marker. Compounds preserve their structure. |
-| `EmitCanonical(v any) (string, error)` | Render a Go value as canonical Ktav (spec § 5.9). Key order follows Go map iteration (alphabetical for `map[string]any`). |
+| `EmitCanonical(v any) (string, error)` | Render a Go value as canonical Ktav (spec § 5.9). Go maps are encoded through `encoding/json`, which sorts string keys lexicographically. |
 | `CanonicalFromSource(src string) (string, error)` | Parse Ktav and immediately emit canonical form, preserving source key order. |
 | `FormatSource(src string) (string, error)` | Format Ktav source into its normalised spelling, **keeping every comment**. See below. |
 
 ## Formatting — canonical spelling, comments kept
 
-`FormatSource` and `EmitCanonical` are different operations and it is
-worth being clear which you want:
+`FormatSource` and `EmitCanonical` are different operations:
 
-- **`EmitCanonical`** takes a Go value and writes the canonical form.
-  Trivia does not exist in a value, so none survives.
-- **`FormatSource`** takes source *text* and rewrites its spelling while
-  **preserving every comment verbatim** (spec § 3.4: a comment owns a
-  whole line). Key order is never changed.
+- **`EmitCanonical`** takes a Go value and writes canonical form. Comments
+  are not part of a value and cannot survive.
+- **`FormatSource`** takes source text and normalizes its spelling while
+  preserving every whole-line comment (spec § 3.4). Both it and
+  `CanonicalFromSource` preserve source key order.
 
-```go
-out, err := ktav.FormatSource("## why\na:   {x: 1}\n")
-// "## why\na: {\n    x: 1\n}\n"
-// the comment survives; the inline compound is expanded to canonical
-// multi-line form and re-indented
-```
-
-Blank lines survive as a grouping hint, but a run of two or more
-collapses to exactly one, and blank padding immediately inside a bracket
-is dropped:
+The snippets below use these imports:
 
 ```go
-ktav.FormatSource("## keep me\n\n\nport: 8080\n")
-// "## keep me\n\nport: 8080\n" — two blank lines became one
-```
+import (
+    "fmt"
 
-That makes formatting a fixed point:
+    ktav "github.com/ktav-lang/golang"
+)
+```
 
 ```go
-ktav.FormatSource(ktav.FormatSource(x)) == ktav.FormatSource(x)
+func formatExample() error {
+	out, err := ktav.FormatSource("## why\na:   {x: 1}\n")
+	if err != nil {
+		return err
+	}
+	fmt.Print(out)
+	return nil
+}
 ```
 
-For a document with no comments and no blank lines, the result equals
-`CanonicalFromSource` of the same text.
+Blank lines are grouping hints: a run of two or more becomes one, and
+blank padding immediately inside a bracket is dropped.
+
+```go
+func formatBlankLinesExample() error {
+	out, err := ktav.FormatSource("## keep me\n\n\nport: 8080\n")
+	if err != nil {
+		return err
+	}
+	fmt.Print(out)
+	return nil
+}
+```
+
+Formatting reaches a fixed point. Handle each `(string, error)` result
+before passing the next string to the formatter:
+
+```go
+func isFixedPoint(src string) (bool, error) {
+	once, err := ktav.FormatSource(src)
+	if err != nil {
+		return false, err
+	}
+	twice, err := ktav.FormatSource(once)
+	if err != nil {
+		return false, err
+	}
+	return once == twice, nil
+}
+```
+
+Without comments or blank lines, the result equals `CanonicalFromSource`
+for the same text.
 
 ## Structured errors
 
-Every failure carries the same structured envelope the other Ktav
-bindings carry, so a tool can act on the fields instead of parsing a
-message. `Loads`, `Dumps` and the rest return an `*Error`:
+Native parser and writer failures carry the structured envelope shared
+by Ktav bindings, so tools can act on fields instead of parsing a
+message. Other failures, such as native-library loading/download and Go
+JSON conversion errors, are ordinary Go errors and need not be
+`*ktav.Error`:
 
 ```go
 if _, err := ktav.Loads("a: 1\na: 2\n"); err != nil {
@@ -180,9 +220,9 @@ if _, err := ktav.Loads("a: 1\na: 2\n"); err != nil {
 
 | Field | Meaning |
 | --- | --- |
-| `Msg` | The core's own rendering of the error. Never empty; this is what `Error()` returns. |
-| `Class` | Structured error class — `DuplicateKey`, `Unrepresentable`, `Message`. |
-| `Reason` | Writer-time reason code (spec § 5.9.0) such as `NonFiniteFloat`; `""` when the envelope carries null. |
+| `Msg` | Human-readable error text. Native-origin errors use the core's rendering; host-synthesized errors use binding wording. |
+| `Class` | Structured error class — `DuplicateKey`, `Unrepresentable`, `UnrepresentableAt`, `InvalidUtf8`, `Message`. |
+| `Reason` | Host writer reasons include `NonFiniteFloat`, `ScalarRoot`, and `EmptyKeyName`. `InvalidUtf8` is a source-error class with an empty reason. |
 | `Line` | 1-based source line; `0` when the envelope carries null. |
 | `LineText` | Text of the offending line. |
 | `Span` | `*Span` — byte offsets into the UTF-8 source. |
@@ -199,8 +239,10 @@ Two details that are easy to get wrong:
   literally named `a.b` is one segment and cannot be confused with a
   two-segment path — there is no separator to be ambiguous about.
 
-`Msg` is taken from the core verbatim rather than assembled here, so the
-same document produces the same error text in every Ktav binding.
+For native structured errors, `Msg` is taken from the core verbatim
+rather than assembled here, so the same document produces the same error
+text in every Ktav binding. Loader, Go conversion, and host-synthesized
+validation errors are outside that cross-binding guarantee.
 
 ## Type mapping
 
@@ -208,18 +250,20 @@ same document produces the same error text in every Ktav binding.
 | ---------------- | ----------------------------------------------- |
 | `null`           | `nil`                                           |
 | `true` / `false` | `bool`                                          |
-| integer scalar   | `int64` if it fits, else `*big.Int`             |
+| integer scalar   | `int64` if it fits; otherwise `string`           |
 | float scalar     | `float64`                                       |
 | bare scalar      | `string`                                        |
 | `[ ... ]`        | `[]any`                                         |
-| `{ ... }`        | `map[string]any` (insertion order preserved)    |
+| `{ ... }`        | `map[string]any` (Go map; no insertion-order guarantee) |
 
-Under spec 0.5 integers and floats are inferred from the scalar body's
-lexical form (no typed markers). On encode, Go `int*` / `uint*` /
-`*big.Int` become integer scalars; `float32` / `float64` become float
-scalars; `string` stays a bare scalar. `NaN` and `±Inf` are rejected.
-Structs are serialized through `encoding/json` first, so `json:"..."`
-tags are honoured.
+Under spec 0.8, integers and floats are inferred from the scalar body's
+lexical form (no typed markers). An integer outside `int64` range parses
+as a String. On encode, Go `int*` / `uint*` / `*big.Int` become integer
+scalars, but an out-of-range `*big.Int` parses back as a String;
+`float32` / `float64` become float scalars and `string` stays a bare
+scalar. `Dumps` and `EmitCanonical` reject `NaN` and `±Inf`;
+`DumpsForceStrings` converts them to String leaves. Structs are serialized
+through `encoding/json` first, so `json:"..."` tags are honoured.
 
 ## Key escaping
 
@@ -227,9 +271,12 @@ Since spec 0.6.4 a literal `.` or `:` inside a key segment is written
 with a backslash:
 
 ```text
-a\.b: v        // key is the single segment "a.b" -> map["a.b"] = "v"
-a\:b: v        // key contains a colon            -> map["a:b"] = "v"
-x.y\.z: v      // split on the first dot only     -> map["x"]["y.z"] = "v"
+## The key is the single segment "a.b".
+a\.b: v
+## The key is the single segment "a:b".
+a\:b: v
+## This is the path ["x", "y.z"].
+x.y\.z: v
 ```
 
 A literal backslash in a key is `\\`.
