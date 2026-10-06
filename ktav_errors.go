@@ -47,19 +47,115 @@ func invalidUTF8Error(src string) *Error {
 	if utf8.ValidString(src) {
 		return nil
 	}
-	for offset := 0; offset < len(src); {
-		_, size := utf8.DecodeRuneInString(src[offset:])
-		if size == 1 && src[offset] >= utf8.RuneSelf {
-			return &Error{
-				Msg:         "InvalidUtf8: input is not valid UTF-8",
-				Class:       "InvalidUtf8",
-				Span:        &Span{Start: offset, End: offset},
-				SpecSection: "§6.15",
+	start, end, invalid := firstInvalidUTF8Span(src)
+	if !invalid {
+		return nil
+	}
+	return &Error{
+		Msg:         "InvalidUtf8: input is not valid UTF-8",
+		Class:       "InvalidUtf8",
+		Line:        lineOfOffset(src, start),
+		Span:        &Span{Start: start, End: end},
+		SpecSection: "§6.15",
+	}
+}
+
+// firstInvalidUTF8Span locates the first ill-formed UTF-8 sequence in src,
+// mirroring the Rust C ABI reference (std str::from_utf8 valid_up_to/
+// error_len semantics plus the envelope's continuation-byte extension)
+// so both layers reject with identical Line/Span diagnostics (§6.15).
+// It returns the half-open byte span [start, end) and ok=true, or
+// ok=false when src is entirely well-formed.
+func firstInvalidUTF8Span(src string) (start, end int, ok bool) {
+	for i := 0; i < len(src); {
+		b := src[i]
+		if b < utf8.RuneSelf {
+			i++
+			continue
+		}
+		var size int
+		var lo, hi byte // allowed range for the second byte
+		switch {
+		case b >= 0xC2 && b <= 0xDF:
+			size, lo, hi = 2, 0x80, 0xBF
+		case b == 0xE0:
+			size, lo, hi = 3, 0xA0, 0xBF
+		case (b >= 0xE1 && b <= 0xEC) || b == 0xEE || b == 0xEF:
+			size, lo, hi = 3, 0x80, 0xBF
+		case b == 0xED:
+			size, lo, hi = 3, 0x80, 0x9F
+		case b == 0xF0:
+			size, lo, hi = 4, 0x90, 0xBF
+		case b >= 0xF1 && b <= 0xF3:
+			size, lo, hi = 4, 0x80, 0xBF
+		case b == 0xF4:
+			size, lo, hi = 4, 0x80, 0x8F
+		default:
+			// Continuation byte in lead position or an illegal lead
+			// (C0, C1, F5..FF): a one-byte valid prefix.
+			return i, extendContinuation(src, i+1), true
+		}
+		if i+1 >= len(src) {
+			// No second byte is present, so the sequence is truncated.
+			return i, len(src), true
+		}
+		if src[i+1] < lo || src[i+1] > hi {
+			// Only the lead is a valid prefix (error_len 1).
+			return i, extendContinuation(src, i+1), true
+		}
+		for j := 2; j < size; j++ {
+			if i+j >= len(src) {
+				// Input ends before this required continuation byte.
+				return i, len(src), true
+			}
+			if src[i+j] < 0x80 || src[i+j] > 0xBF {
+				// Sequence breaks after j good bytes (error_len j);
+				// no continuation extension here.
+				return i, i + j, true
 			}
 		}
-		offset += size
+		i += size
 	}
-	return nil
+	return 0, 0, false
+}
+
+// extendContinuation advances e while src[e] is a UTF-8 continuation
+// byte, matching the C ABI envelope's extension of an error_len-1 span
+// over any following continuation bytes.
+func extendContinuation(src string, e int) int {
+	for e < len(src) && src[e] >= 0x80 && src[e] <= 0xBF {
+		e++
+	}
+	return e
+}
+
+// lineOfOffset returns the 1-based raw-byte line containing byte offset
+// pos, counting each LF, lone CR, and CR LF pair as one terminator per
+// spec §3.2 (no BOM skipping, §6.15). It mirrors the Rust C ABI
+// line_of_offset byte-for-byte so both layers report identical lines.
+func lineOfOffset(src string, pos int) int {
+	line := 1
+	bound := min(pos, len(src))
+	for i := 0; i < bound; {
+		switch src[i] {
+		case '\n':
+			line++
+			i++
+		case '\r':
+			if i+1 < len(src) && src[i+1] == '\n' {
+				if i+2 <= pos {
+					line++
+				}
+				i += 2
+			} else {
+				line++
+				i++
+			}
+		default:
+			i++
+		}
+	}
+	return line
 }
 
 func unrepresentableError(reason string, path []string) *Error {
