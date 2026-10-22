@@ -283,46 +283,30 @@ x.y\.z: v
    `github.com/ktav-lang/golang/releases/download/v<version>/<name>`
    下载匹配的资产，缓存到 (2)。安装后首次调用需要联网。
 
-## 选择 pure-Go 后端
+# Pure-Go 后端
 
-默认情况下，包会把调用分发到原生 `ktav_cabi` 共享库（purego，无
-cgo）。另一个完全自包含的实现——以 Go 编写的解析器和生成器——同样
-可用，以相同签名覆盖所有公开操作：
+使用 `go get github.com/ktav-lang/golang/pure@v0.8.1` 安装，然后导入：
 
 ```go
-ktav.UsePure()                      // 或：
-ktav.UseBackend(ktav.BackendPure)
+import "github.com/ktav-lang/golang/pure"
+v, err := pure.Loads(src)
+ops := pure.New()
 ```
 
-- `UsePure` / `UseBackend(ktav.BackendPure)`：pure-Go 路径。它不加载、
-  不下载、也不需要原生库，且不启动子进程，因此在未安装 `ktav_cabi`
-  制品的机器上同样可用。
-- `UseNative` / `UseBackend(ktav.BackendNative)`：经 purego `ktav_cabi`
-  的路径。这是默认值，也是历史行为。
-- 两个方向都没有自动回退：所选后端失败时，你得到的是错误，而不是
-  另一个实现。
+包级函数和 `pure.New()` 提供全部八项操作：`Loads`、`LoadsStrict`、`LoadsInto`、
+`Dumps`、`DumpsForceStrings`、`EmitCanonical`、`FormatSource`、
+`CanonicalFromSource`，以及完整的 `pure.Error`/`pure.Span` 别名。该包共享
+`internal/engine`；其 runtime 依赖图仅使用标准库。
 
-请在启动时、第一次解析之前选择一次后端。两次调用之间可以切换实现；
-进行中的调用总是在它开始时所用的后端上完成。
+兼容的根 API `ktav.New(ktav.BackendPure)` 仍保留，但根包导入即需要
+`github.com/ebitengine/purego v0.8.4` 和 `golang.org/x/sys v0.28.0`，即使选择
+BackendPure。离线打包消费者使用仅文件代理、readonly 模式和导入白名单，验证
+`/pure` 没有外部 runtime 导入。其 CI 任务通过已安装的 `/pure` 产物运行完整的
+0.8 一致性语料，使用 `CGO_ENABLED=0` 并在 `PATH` 上拦截 `rustc`/`cargo`。
 
-对于不应依赖进程全局状态的并发或库代码，可将操作显式绑定到某一个后
-端：
-
-```go
-ops, err := ktav.New(ktav.BackendPure)
-ops.Loads(src) // 以及 LoadsStrict、LoadsInto、Dumps、
-               // DumpsForceStrings、EmitCanonical、FormatSource、
-               // CanonicalFromSource —— 全部绑定到该实例
-```
-
-`Operations` 值携带自己的后端：其方法不会读取或修改全局默认值，因此
-各实例彼此隔离，也与 `UseBackend` 隔离。包级函数保留全局默认（原生）
-行为。
-
-Pure 模式的限制：解码值保持文档规定的 `map[string]any` 契约（解码键
-顺序无法表示）；对普通 Go 映射，`EmitCanonical` 保持文档规定的字母
-序，而 `CanonicalFromSource` 与 `FormatSource` 保留插入顺序；内联复合
-结构嵌套上限为 128 层（§5.8.4，实现定义，与参考实现一致）。点号键嵌套（§5.3.2）不设上限：pure 写入器、trivia 遍历、tagged-JSON 编解码器以及 Go 侧公共桥转换（`decodeJSON`、`toTagged`、`prepareWriterValue`、去标签展平）均为迭代实现（显式工作栈），深层文档与深层程序构造的值不会导致栈溢出。该迭代保证覆盖 pure 写入器、trivia 遍历、`marshalTagged`（pure 树 → 线格式）、`decodeJSON`、`toTagged`、`prepareWriterValue` 与去标签展平；`Dumps` 中普通的映射/切片发射以及 `LoadsInto` 的类型化解码仍经由 `encoding/json`（`json.Marshal` / `json.Decoder.Decode`），其自带嵌套上限——超限时返回错误而非崩溃。写入器转换会对每个映射的键排序（线格式为字母序），在遍历之外每映射付出 O(n log n) 代价。循环引用的 Go 值（映射或切片在活跃路径上包含自身）会被 `Dumps`/`DumpsForceStrings`/`EmitCanonical` 以结构化错误拒绝（`Class: "Message"`，"ktav: cyclic Go value cannot be encoded"）；兄弟分支间共享的子映射（DAG 而非循环）仍可正常工作。经 `encoding/json` 回退的值（任意结构体）依赖该包自身的嵌套上限——超限时返回错误而非崩溃；本包不扩展也不验证该回退路径的深度。循环检测基于活跃路径：显式的 ENTER/EXIT 工作栈方案在容器整个子树转换完成前保持其活跃标记，因此 a→b→a 循环在首次重访即被拒绝，而已退出的共享 DAG 节点会再次转换；切片身份由（指针、长度、容量）决定，同一底层数组的不同视图不会被混淆。`Loads`/`LoadsStrict`/`LoadsInto` 拒绝顶层线格式值之后的尾随数据（第二个顶层 JSON 值是错误而非静默覆盖），且 JSON 键 `""` 是合法键。扫描探针插桩（生产环境中为 nil 钩子）在每个粗粒度事件上付出一次 nil 判断，并在字符串分类扫描内部付出逐字节计数——以对被扫描主体的一次遍历为界；这是如实记录的成本，而非宣称免费。
+Inline 复合值限制为 128 层。普通映射的规范键按字母排序（O(n log n)）；
+源规范化和格式化保留源顺序。`encoding/json` 桥接路径有自身深度限制；不承诺
+无限深度。Node 文档和 Go 构建/测试命令是开发工具，而非 `/pure` runtime 依赖。
 
 ## 运行时支持
 

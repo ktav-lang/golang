@@ -15,8 +15,9 @@ itself — for the latter see
 
 ### Added
 
-- A pure-Go `Operations` backend, selectable per instance or globally for all 8 public operations.
+- `pure` is a separate stdlib-only package: `import "github.com/ktav-lang/golang/pure"`; package functions and `pure.New()` expose all eight operations and `Error`/`Span` aliases. The legacy root `BackendPure` API remains, but importing the root module retains its native `purego` and `x/sys` dependencies.
 - The native core is upgraded to the published Rust `ktav` 0.8.1 with spec 0.8.1, covering all five corpus categories (valid, invalid, unrepresentable, parseable-unrepresentable, strict-lossy).
+- The packaged pure consumer CI job runs the entire 0.8 conformance corpus through the installed `/pure` artifact with `CGO_ENABLED=0` and with `rustc`/`cargo` trapped on `PATH`, in addition to the file-only proxy, readonly mode, and import whitelist.
 
 ### Fixed
 

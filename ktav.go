@@ -47,6 +47,8 @@ package ktav
 
 import (
 	"encoding/json"
+
+	"github.com/ktav-lang/golang/internal/engine"
 )
 
 // loadsVia / loadsStrictVia / ... are the shared bodies of the
@@ -60,7 +62,7 @@ func loadsVia(vt *backendVTable, src string) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	return decodeJSON(js)
+	return engine.DecodeJSON(js)
 }
 
 func loadsStrictVia(vt *backendVTable, src string) (any, error) {
@@ -71,7 +73,7 @@ func loadsStrictVia(vt *backendVTable, src string) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	return decodeJSON(js)
+	return engine.DecodeJSON(js)
 }
 
 func loadsIntoVia(vt *backendVTable, src string, target any) error {
@@ -82,7 +84,7 @@ func loadsIntoVia(vt *backendVTable, src string, target any) error {
 	if err != nil {
 		return err
 	}
-	plain, err := flattenTagged(js)
+	plain, err := engine.FlattenTagged(js)
 	if err != nil {
 		return err
 	}
@@ -90,7 +92,7 @@ func loadsIntoVia(vt *backendVTable, src string, target any) error {
 }
 
 func dumpsVia(vt *backendVTable, v any) (string, error) {
-	tagged, err := encodeWriterTagged(v, false)
+	tagged, err := engine.EncodeWriterTagged(v, false)
 	if err != nil {
 		return "", err
 	}
@@ -102,7 +104,7 @@ func dumpsVia(vt *backendVTable, v any) (string, error) {
 }
 
 func dumpsForceStringsVia(vt *backendVTable, v any) (string, error) {
-	tagged, err := encodeWriterTagged(v, true)
+	tagged, err := engine.EncodeWriterTagged(v, true)
 	if err != nil {
 		return "", err
 	}
@@ -114,7 +116,7 @@ func dumpsForceStringsVia(vt *backendVTable, v any) (string, error) {
 }
 
 func emitCanonicalVia(vt *backendVTable, v any) (string, error) {
-	tagged, err := encodeWriterTagged(v, false)
+	tagged, err := engine.EncodeWriterTagged(v, false)
 	if err != nil {
 		return "", err
 	}

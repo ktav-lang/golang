@@ -9,11 +9,13 @@ package ktav_test
 
 import (
 	"errors"
+	"reflect"
 	"strings"
 	"testing"
 
 	ktav "github.com/ktav-lang/golang"
 	"github.com/ktav-lang/golang/internal/native"
+	"github.com/ktav-lang/golang/pure"
 )
 
 // pureErr asserts err is a *ktav.Error with exactly the given class (and
@@ -41,6 +43,53 @@ func requirePureFailure(t *testing.T, label, class, reason string, fn func() (st
 		t.Fatalf("%s: expected %s error, got ok:\n%s", label, class, out)
 	}
 	pureErr(t, err, class, reason)
+}
+
+func TestPureMalformedQuotedKeyConflictPath(t *testing.T) {
+	src := "a: 1\na.\"\\q\": 2\n"
+	if got := strings.Count(src, `\`); got != 1 {
+		t.Fatalf("test source has %d backslashes, want exactly one: %q", got, src)
+	}
+	if !strings.Contains(src, `a."\q"`) {
+		t.Fatalf("test source does not contain the intended malformed segment: %q", src)
+	}
+
+	calls := []struct {
+		name string
+		call func(string) error
+	}{
+		{"Loads", func(s string) error { _, err := pure.Loads(s); return err }},
+		{"LoadsStrict", func(s string) error { _, err := pure.LoadsStrict(s); return err }},
+		{"FormatSource", func(s string) error { _, err := pure.FormatSource(s); return err }},
+		{"CanonicalFromSource", func(s string) error { _, err := pure.CanonicalFromSource(s); return err }},
+	}
+	for _, tc := range calls {
+		t.Run(tc.name, func(t *testing.T) {
+			err := tc.call(src)
+			if err == nil {
+				t.Fatal("expected KeyPathConflict")
+			}
+			var got *pure.Error
+			if !errors.As(err, &got) {
+				t.Fatalf("want *pure.Error, got %T (%v)", err, err)
+			}
+			if got.Class != "KeyPathConflict" {
+				t.Fatalf("class = %q, want KeyPathConflict", got.Class)
+			}
+			wantPath := []string{"a", `"\q"`}
+			if !reflect.DeepEqual(got.Path, wantPath) {
+				t.Fatalf("path = %#v, want %#v", got.Path, wantPath)
+			}
+		})
+	}
+
+	// Without the earlier scalar prefix there is no path conflict; the same
+	// malformed quoted segment reaches key decoding and reports its escape.
+	_, err := pure.Loads("anchor: ok\na.\"\\q\": 2\n")
+	var got *pure.Error
+	if !errors.As(err, &got) || got.Class != "BadEscapeSequence" {
+		t.Fatalf("standalone malformed key error = %v, want BadEscapeSequence", err)
+	}
 }
 
 // TestPureNegativeControls walks every major parser error state with a

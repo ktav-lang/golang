@@ -10,22 +10,124 @@ package ktav_test
 
 import (
 	"errors"
+	"math"
+	"reflect"
 	"strings"
 	"testing"
 
 	ktav "github.com/ktav-lang/golang"
+	"github.com/ktav-lang/golang/pure"
 )
 
-func bridgeOps(t *testing.T) *ktav.Operations {
+func bridgeOps(t *testing.T) *pure.Operations {
 	t.Helper()
-	ops, err := ktav.New(ktav.BackendPure)
-	if err != nil {
-		t.Fatalf("New(BackendPure): %v", err)
-	}
-	return ops
+	return pure.New()
 }
 
-// wantCyclic asserts the structured Message/cyclic error on every
+func TestBridgeRootPureCompatibilityParityAndErrorIdentity(t *testing.T) {
+	legacy, err := ktav.New(ktav.BackendPure)
+	if err != nil {
+		t.Fatal(err)
+	}
+	modern := pure.New()
+	src := "a: 1\n"
+	for _, call := range []struct {
+		name           string
+		legacy, modern func() (any, error)
+	}{
+		{"Loads", func() (any, error) { return legacy.Loads(src) }, func() (any, error) { return modern.Loads(src) }},
+		{"LoadsStrict", func() (any, error) { return legacy.LoadsStrict(src) }, func() (any, error) { return modern.LoadsStrict(src) }},
+		{"LoadsInto", func() (any, error) { target := map[string]any{}; return target, legacy.LoadsInto(src, &target) }, func() (any, error) { target := map[string]any{}; return target, modern.LoadsInto(src, &target) }},
+	} {
+		a, ea := call.legacy()
+		b, eb := call.modern()
+		if ea != nil || eb != nil || !structEqual(a, b) {
+			t.Fatalf("%s parity: legacy=%#v/%v pure=%#v/%v", call.name, a, ea, b, eb)
+		}
+	}
+	for _, call := range []struct {
+		name           string
+		legacy, modern func() (string, error)
+	}{
+		{"Dumps", func() (string, error) { return legacy.Dumps(map[string]any{"a": int64(1)}) }, func() (string, error) { return modern.Dumps(map[string]any{"a": int64(1)}) }},
+		{"DumpsForceStrings", func() (string, error) { return legacy.DumpsForceStrings(map[string]any{"a": int64(1)}) }, func() (string, error) { return modern.DumpsForceStrings(map[string]any{"a": int64(1)}) }},
+		{"EmitCanonical", func() (string, error) { return legacy.EmitCanonical(map[string]any{"a": int64(1)}) }, func() (string, error) { return modern.EmitCanonical(map[string]any{"a": int64(1)}) }},
+		{"FormatSource", func() (string, error) { return legacy.FormatSource("a:  1\n") }, func() (string, error) { return modern.FormatSource("a:  1\n") }},
+		{"CanonicalFromSource", func() (string, error) { return legacy.CanonicalFromSource(src) }, func() (string, error) { return modern.CanonicalFromSource(src) }},
+	} {
+		a, ea := call.legacy()
+		b, eb := call.modern()
+		if ea != nil || eb != nil || a != b {
+			t.Fatalf("%s parity: %q/%v vs %q/%v", call.name, a, ea, b, eb)
+		}
+	}
+	_, legacyErr := legacy.Loads("anchor: ok\njust text\n")
+	_, pureErr := modern.Loads("anchor: ok\njust text\n")
+	assertErrorParity(t, "malformed source", legacyErr, pureErr)
+	assertErrorFields(t, "malformed source", legacyErr, "MissingSeparator", "", "", "", nil, true, false)
+	_, legacyStrictErr := legacy.LoadsStrict("value: 1.10\n")
+	_, pureStrictErr := modern.LoadsStrict("value: 1.10\n")
+	assertErrorParity(t, "strict lossy payload", legacyStrictErr, pureStrictErr)
+	assertErrorFields(t, "strict lossy payload", legacyStrictErr, "LossyScalar", "", "1.10", "1.1", nil, true, false)
+	for _, test := range []struct {
+		name      string
+		value     any
+		class     string
+		reason    string
+		path      []string
+		pathIsNil bool
+	}{
+		{"empty-key", map[string]any{"": int64(1)}, "UnrepresentableAt", "EmptyKeyName", []string{""}, false},
+		{"non-finite-float", map[string]any{"value": math.NaN()}, "UnrepresentableAt", "NonFiniteFloat", []string{"value"}, false},
+		{"scalar-root", true, "UnrepresentableAt", "ScalarRoot", []string{}, false},
+	} {
+		_, le := legacy.Dumps(test.value)
+		_, pe := modern.Dumps(test.value)
+		assertErrorParity(t, test.name, le, pe)
+		assertErrorFields(t, test.name, le, test.class, test.reason, "", "", test.path, test.pathIsNil, true)
+	}
+}
+
+func assertErrorFields(t *testing.T, name string, err error, class, reason, body, canonical string, path []string, pathIsNil, spanIsNil bool) {
+	t.Helper()
+	var got *ktav.Error
+	if err == nil || !errors.As(err, &got) || got == nil {
+		t.Fatalf("%s: expected structured error, got %v", name, err)
+	}
+	if class != "" && got.Class != class || got.Reason != reason || got.Body != body || got.Canonical != canonical {
+		t.Fatalf("%s: class/reason/body/canonical = %q/%q/%q/%q, want %q/%q/%q/%q", name, got.Class, got.Reason, got.Body, got.Canonical, class, reason, body, canonical)
+	}
+	if (got.Path == nil) != pathIsNil || !reflect.DeepEqual(got.Path, path) {
+		t.Fatalf("%s: Path = %#v (nil=%t), want %#v (nil=%t)", name, got.Path, got.Path == nil, path, pathIsNil)
+	}
+	if (got.Span == nil) != spanIsNil {
+		t.Fatalf("%s: Span = %#v (nil=%t), want nil=%t", name, got.Span, got.Span == nil, spanIsNil)
+	}
+	if got.Span != nil && got.Span.Start >= got.Span.End {
+		t.Fatalf("%s: Span = %#v, want nonempty range", name, got.Span)
+	}
+}
+
+func assertErrorParity(t *testing.T, name string, legacyErr, pureErr error) {
+	t.Helper()
+	if legacyErr == nil || pureErr == nil {
+		t.Fatalf("%s: expected errors, got legacy=%v pure=%v", name, legacyErr, pureErr)
+	}
+	var legacyRoot *ktav.Error
+	var legacyPure *pure.Error
+	var modernRoot *ktav.Error
+	var modernPure *pure.Error
+	if !errors.As(legacyErr, &legacyRoot) || !errors.As(legacyErr, &legacyPure) || !errors.As(pureErr, &modernRoot) || !errors.As(pureErr, &modernPure) {
+		t.Fatalf("%s: errors must resolve through both aliases: legacy=%T pure=%T", name, legacyErr, pureErr)
+	}
+	if legacyRoot != legacyPure || modernRoot != modernPure {
+		t.Fatalf("%s: aliases did not preserve actual error identity", name)
+	}
+	if !reflect.DeepEqual(legacyRoot, modernRoot) {
+		t.Fatalf("%s: full error fields differ: legacy=%#v pure=%#v", name, legacyRoot, modernRoot)
+	}
+}
+
 // writer entry point.
 func wantCyclic(t *testing.T, name string, err error) {
 	t.Helper()

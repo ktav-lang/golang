@@ -1,4 +1,4 @@
-package ktav
+package engine
 
 // Wiring for the pure backend: parse entries (plain + trivia), the
 // tagged-JSON bridge shared with ktav_wire.go, the wire ingest that

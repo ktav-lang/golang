@@ -14,8 +14,9 @@ MINOR 递进视为破坏性变更。
 
 ### 新增
 
-- Pure-Go 的 `Operations` 后端，可按实例或全局选择，覆盖全部 8 个公开操作。
+- `pure` 是独立的仅标准库包：`import "github.com/ktav-lang/golang/pure"`；包级函数和 `pure.New()` 提供全部八项操作及 `Error`/`Span` 别名。根包的兼容 `BackendPure` API 保留，但导入根模块仍会带入 native 依赖 `purego` 和 `x/sys`。
 - 原生核心升级到已发布的 Rust `ktav` 0.8.1，配套规范 0.8.1，覆盖全部五类语料（valid、invalid、unrepresentable、parseable-unrepresentable、strict-lossy）。
+- 打包 pure 消费者的 CI 任务在仅文件代理、readonly 模式和导入白名单之外，还通过已安装的 `/pure` 产物运行完整的 0.8 一致性语料，使用 `CGO_ENABLED=0` 并在 `PATH` 上拦截 `rustc`/`cargo`。
 
 ### 修复
 

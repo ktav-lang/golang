@@ -293,52 +293,33 @@ At first call the Go package resolves `ktav_cabi` in this order:
    from `github.com/ktav-lang/golang/releases/download/v<version>/<name>`
    and cached under (2). Requires network on first call after install.
 
-## Choosing the pure-Go backend
+# Pure-Go backend
 
-By default the package dispatches to the native `ktav_cabi` shared
-library (purego, no cgo). A second, fully self-contained implementation
-— parser and generator written in Go — is available and covers every
-public operation with identical signatures:
+Use `go get github.com/ktav-lang/golang/pure@v0.8.1`, then import:
 
 ```go
-ktav.UsePure()                      // or:
-ktav.UseBackend(ktav.BackendPure)
+import "github.com/ktav-lang/golang/pure"
+v, err := pure.Loads(src)
+ops := pure.New()
 ```
 
-- `UsePure` / `UseBackend(ktav.BackendPure)`: pure-Go path. It never
-  loads, downloads or requires the native library and never spawns a
-  subprocess, so it also works on machines where no `ktav_cabi`
-  artifact is installed.
-- `UseNative` / `UseBackend(ktav.BackendNative)`: the purego `ktav_cabi`
-  path. This is the default and the historical behaviour.
-- There is no automatic fallback in either direction: if the selected
-  backend fails, you get an error, not the other implementation.
+Package functions and `pure.New()` expose all eight operations: `Loads`,
+`LoadsStrict`, `LoadsInto`, `Dumps`, `DumpsForceStrings`, `EmitCanonical`,
+`FormatSource`, `CanonicalFromSource`, plus full `pure.Error`/`pure.Span` aliases.
+The package shares `internal/engine`; its runtime graph is stdlib-only.
 
-Call the selector once at startup, before the first parse. The
-implementation can be switched between calls; a call in flight always
-finishes on the backend it started on.
+Root `ktav.New(ktav.BackendPure)` remains compatible, but root imports require
+`github.com/ebitengine/purego v0.8.4` and `golang.org/x/sys v0.28.0` even with
+BackendPure. An offline packaged consumer uses a file-only proxy, readonly mode
+and an import whitelist to verify no external runtime imports for `/pure`. Its
+CI job runs the entire 0.8 conformance corpus through the installed `/pure`
+artifact with `CGO_ENABLED=0` and with `rustc`/`cargo` trapped on `PATH`.
 
-For concurrent or library code that must not depend on process-global
-state, bind the operations to one backend explicitly:
-
-```go
-ops, err := ktav.New(ktav.BackendPure)
-ops.Loads(src) // plus LoadsStrict, LoadsInto, Dumps,
-               // DumpsForceStrings, EmitCanonical, FormatSource,
-               // CanonicalFromSource — all bound to this instance
-```
-
-An `Operations` value carries its own backend: its methods never read
-or write the global default, so instances stay isolated from each other
-and from `UseBackend`. The package-level functions keep the global
-default (native) behaviour.
-
-Limits of pure mode: decoded values keep the documented
-`map[string]any` contract (decoded key order is not represented);
-`EmitCanonical` over plain Go maps keeps the documented alphabetical
-order, while `CanonicalFromSource` and `FormatSource` preserve source
-insertion order; inline compound nesting is capped at 128 levels
-(§5.8.4, implementation-defined, mirroring the reference). Dotted-key nesting (§5.3.2) is NOT capped: the pure writers, the trivia walk, the tagged-JSON codec and the Go-side public bridge conversions (`decodeJSON`, `toTagged`, `prepareWriterValue`, the untagged flattening) are iterative (explicit work stacks), so deep documents and deep programmatic values cannot overflow the stack. That iterative guarantee covers the pure writers, the trivia walk, `marshalTagged` (pure tree → wire), `decodeJSON`, `toTagged`, `prepareWriterValue` and the untagged flattening; ordinary map/slice emission in `Dumps` and the typed `LoadsInto` decode still go through `encoding/json` (`json.Marshal` / `json.Decoder.Decode`), which carries its own nesting limit — an error, not a crash, beyond it. Writer conversion sorts each map's keys (alphabetical wire order), an O(n log n)-per-map cost on top of the linear walk. A cyclic Go value (a map or slice that contains itself on the active path) is rejected by `Dumps`/`DumpsForceStrings`/`EmitCanonical` with a structured error (`Class: "Message"`, "ktav: cyclic Go value cannot be encoded"); shared sub-maps on sibling branches (a DAG, not a cycle) keep working. Values that fall back through `encoding/json` (arbitrary structs) rely on that package's own nesting limit, which returns an error — not a crash — beyond it; this package does not extend or verify that fallback depth. Cycle detection is ACTIVE-PATH based: an explicit ENTER/EXIT work-stack scheme keeps each container marked active until its entire subtree is converted, so a→b→a loops are rejected on the first revisit while shared DAG nodes (already exited) convert again; slice identity uses (pointer, len, cap), so distinct views of one backing array are never conflated. `Loads`/`LoadsStrict`/`LoadsInto` reject trailing data after the top-level wire value (a second top-level JSON value is an error, not a silent overwrite), and a JSON key `""` is a legitimate key. The scan-probe instrumentation (a nil hook in production) pays one nil-test per coarse event plus per-byte counters inside the string-classification scans — bounded by one pass over the scanned body, documented rather than claimed free.
+Inline compounds have a 128-level limit. Plain-map canonical keys sort
+alphabetically (O(n log n)); source canonicalization and formatting preserve
+source order. `encoding/json` bridge paths retain depth limits; unlimited depth
+is not promised. Node docs and Go build/test commands are development tools,
+not `/pure` runtime dependencies.
 
 ## Runtime support
 

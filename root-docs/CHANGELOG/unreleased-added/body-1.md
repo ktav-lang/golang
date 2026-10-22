@@ -3,8 +3,9 @@
 
 ### Added
 
-- A pure-Go `Operations` backend, selectable per instance or globally for all 8 public operations.
+- `pure` is a separate stdlib-only package: `import "github.com/ktav-lang/golang/pure"`; package functions and `pure.New()` expose all eight operations and `Error`/`Span` aliases. The legacy root `BackendPure` API remains, but importing the root module retains its native `purego` and `x/sys` dependencies.
 - The native core is upgraded to the published Rust `ktav` 0.8.1 with spec 0.8.1, covering all five corpus categories (valid, invalid, unrepresentable, parseable-unrepresentable, strict-lossy).
+- The packaged pure consumer CI job runs the entire 0.8 conformance corpus through the installed `/pure` artifact with `CGO_ENABLED=0` and with `rustc`/`cargo` trapped on `PATH`, in addition to the file-only proxy, readonly mode, and import whitelist.
 
 ### Fixed
 
@@ -20,8 +21,9 @@
 
 ### Добавлено
 
-- Pure-Go бэкенд `Operations`, выбираемый на экземпляр или глобально для всех 8 публичных операций.
+- `pure` — отдельный пакет только со стандартной библиотекой: `import "github.com/ktav-lang/golang/pure"`; функции пакета и `pure.New()` предоставляют все восемь операций и псевдонимы `Error`/`Span`. Совместимый API `BackendPure` корневого пакета сохранён, но импорт корневого модуля сохраняет native-зависимости `purego` и `x/sys`.
 - Нативное ядро обновлено до опубликованного Rust `ktav` 0.8.1 со спецификацией 0.8.1 и всеми пятью категориями корпуса (valid, invalid, unrepresentable, parseable-unrepresentable, strict-lossy).
+- CI-задача упакованного pure-потребителя прогоняет весь корпус конформности 0.8 через установленный артефакт `/pure` с `CGO_ENABLED=0` и с перехваченными на `PATH` `rustc`/`cargo`, в дополнение к файловому proxy, readonly-режиму и белому списку импортов.
 
 ### Исправлено
 
@@ -37,8 +39,9 @@
 
 ### 新增
 
-- Pure-Go 的 `Operations` 后端，可按实例或全局选择，覆盖全部 8 个公开操作。
+- `pure` 是独立的仅标准库包：`import "github.com/ktav-lang/golang/pure"`；包级函数和 `pure.New()` 提供全部八项操作及 `Error`/`Span` 别名。根包的兼容 `BackendPure` API 保留，但导入根模块仍会带入 native 依赖 `purego` 和 `x/sys`。
 - 原生核心升级到已发布的 Rust `ktav` 0.8.1，配套规范 0.8.1，覆盖全部五类语料（valid、invalid、unrepresentable、parseable-unrepresentable、strict-lossy）。
+- 打包 pure 消费者的 CI 任务在仅文件代理、readonly 模式和导入白名单之外，还通过已安装的 `/pure` 产物运行完整的 0.8 一致性语料，使用 `CGO_ENABLED=0` 并在 `PATH` 上拦截 `rustc`/`cargo`。
 
 ### 修复
 

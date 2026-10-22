@@ -1,6 +1,20 @@
 package ktav
 
-import "sync/atomic"
+import (
+	"sync/atomic"
+
+	"github.com/ktav-lang/golang/internal/engine"
+)
+
+func enginePureLoads(b []byte) ([]byte, error)             { return engine.PureLoads(b) }
+func enginePureLoadsStrict(b []byte) ([]byte, error)       { return engine.PureLoadsStrict(b) }
+func enginePureDumps(b []byte) ([]byte, error)             { return engine.PureDumps(b) }
+func enginePureDumpsForceStrings(b []byte) ([]byte, error) { return engine.PureDumpsForceStrings(b) }
+func enginePureEmitCanonical(b []byte) ([]byte, error)     { return engine.PureEmitCanonical(b) }
+func enginePureFormatSource(b []byte) ([]byte, error)      { return engine.PureFormatSource(b) }
+func enginePureCanonicalFromSource(b []byte) ([]byte, error) {
+	return engine.PureCanonicalFromSource(b)
+}
 
 // Backend selects which implementation backs the package's public
 // operations.
@@ -50,13 +64,13 @@ func nativeVTable() *backendVTable {
 
 func pureVTable() *backendVTable {
 	return &backendVTable{
-		loads:             pureLoadsTagged,
-		loadsStrict:       pureLoadsStrictTagged,
-		dumps:             pureDumpsTagged,
-		dumpsForceStrings: pureDumpsForceStringsTagged,
-		emitCanonical:     pureEmitCanonicalTagged,
-		formatSource:      pureFormatSource,
-		canonicalFromSrc:  pureCanonicalFromSource,
+		loads:             enginePureLoads,
+		loadsStrict:       enginePureLoadsStrict,
+		dumps:             enginePureDumps,
+		dumpsForceStrings: enginePureDumpsForceStrings,
+		emitCanonical:     enginePureEmitCanonical,
+		formatSource:      enginePureFormatSource,
+		canonicalFromSrc:  enginePureCanonicalFromSource,
 	}
 }
 
@@ -94,7 +108,7 @@ func UseBackend(b Backend) error {
 	case BackendPure:
 		backendPtr.Store(pureVTable())
 	default:
-		return newErrorf("ktav: unknown backend %d", int(b))
+		return engine.NewErrorf("ktav: unknown backend %d", int(b))
 	}
 	return nil
 }
@@ -130,6 +144,6 @@ func New(b Backend) (*Operations, error) {
 	case BackendPure:
 		return &Operations{vt: pureVTable()}, nil
 	default:
-		return nil, newErrorf("ktav: unknown backend %d", int(b))
+		return nil, engine.NewErrorf("ktav: unknown backend %d", int(b))
 	}
 }

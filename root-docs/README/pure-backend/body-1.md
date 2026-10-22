@@ -1,76 +1,84 @@
 >>>>> lang=en
-## Choosing the pure-Go backend
+# Pure-Go backend
 
-By default the package dispatches to the native `ktav_cabi` shared
-library (purego, no cgo). A second, fully self-contained implementation
-— parser and generator written in Go — is available and covers every
-public operation with identical signatures:
+Use `go get github.com/ktav-lang/golang/pure@v0.8.1`, then import:
 
 ```go
-ktav.UsePure()                      // or:
-ktav.UseBackend(ktav.BackendPure)
+import "github.com/ktav-lang/golang/pure"
+v, err := pure.Loads(src)
+ops := pure.New()
 ```
 
-- `UsePure` / `UseBackend(ktav.BackendPure)`: pure-Go path. It never
-  loads, downloads or requires the native library and never spawns a
-  subprocess, so it also works on machines where no `ktav_cabi`
-  artifact is installed.
-- `UseNative` / `UseBackend(ktav.BackendNative)`: the purego `ktav_cabi`
-  path. This is the default and the historical behaviour.
-- There is no automatic fallback in either direction: if the selected
-  backend fails, you get an error, not the other implementation.
+Package functions and `pure.New()` expose all eight operations: `Loads`,
+`LoadsStrict`, `LoadsInto`, `Dumps`, `DumpsForceStrings`, `EmitCanonical`,
+`FormatSource`, `CanonicalFromSource`, plus full `pure.Error`/`pure.Span` aliases.
+The package shares `internal/engine`; its runtime graph is stdlib-only.
 
-Call the selector once at startup, before the first parse. The
-implementation can be switched between calls; a call in flight always
-finishes on the backend it started on.
+Root `ktav.New(ktav.BackendPure)` remains compatible, but root imports require
+`github.com/ebitengine/purego v0.8.4` and `golang.org/x/sys v0.28.0` even with
+BackendPure. An offline packaged consumer uses a file-only proxy, readonly mode
+and an import whitelist to verify no external runtime imports for `/pure`. Its
+CI job runs the entire 0.8 conformance corpus through the installed `/pure`
+artifact with `CGO_ENABLED=0` and with `rustc`/`cargo` trapped on `PATH`.
+
+Inline compounds have a 128-level limit. Plain-map canonical keys sort
+alphabetically (O(n log n)); source canonicalization and formatting preserve
+source order. `encoding/json` bridge paths retain depth limits; unlimited depth
+is not promised. Node docs and Go build/test commands are development tools,
+not `/pure` runtime dependencies.
 
 >>>>> lang=ru
-## Выбор pure-Go бэкенда
+# Pure-Go бэкенд
 
-По умолчанию пакет направляет вызовы в нативную разделяемую библиотеку
-`ktav_cabi` (purego, без cgo). Доступна и вторая, полностью
-самодостаточная реализация — парсер и генератор, написанные на Go. Она
-покрывает все публичные операции с теми же сигнатурами:
+Установите через `go get github.com/ktav-lang/golang/pure@v0.8.1`, затем импортируйте:
 
 ```go
-ktav.UsePure()                      // или:
-ktav.UseBackend(ktav.BackendPure)
+import "github.com/ktav-lang/golang/pure"
+v, err := pure.Loads(src)
+ops := pure.New()
 ```
 
-- `UsePure` / `UseBackend(ktav.BackendPure)`: pure-Go путь. Он не
-  загружает, не скачивает и не требует нативную библиотеку и не
-  порождает подпроцессов, поэтому работает и там, где артефакт
-  `ktav_cabi` не установлен.
-- `UseNative` / `UseBackend(ktav.BackendNative)`: путь через purego
-  `ktav_cabi`. Это значение по умолчанию и историческое поведение.
-- Автоматического переключения нет ни в одну сторону: если выбранный
-  бэкенд завершается ошибкой, вы получаете ошибку, а не другую
-  реализацию.
+Функции пакета и `pure.New()` предоставляют все восемь операций: `Loads`,
+`LoadsStrict`, `LoadsInto`, `Dumps`, `DumpsForceStrings`, `EmitCanonical`,
+`FormatSource`, `CanonicalFromSource`, а также полные псевдонимы `pure.Error`/
+`pure.Span`. Пакет использует общий `internal/engine`; runtime-граф — только stdlib.
 
-Выберите бэкенд один раз при старте, до первого разбора. Реализацию
-можно переключать между вызовами; начатый вызов всегда завершается на
-том бэкенде, на котором начался.
+Совместимый root API `ktav.New(ktav.BackendPure)` сохраняется, но корневые импорты
+требуют `github.com/ebitengine/purego v0.8.4` и `golang.org/x/sys v0.28.0` даже
+при BackendPure. Offline-потребитель использует только файловый proxy, readonly
+режим и белый список импортов, проверяя отсутствие внешних runtime-импортов `/pure`.
+Его CI-задача прогоняет весь корпус конформности 0.8 через установленный артефакт
+`/pure` с `CGO_ENABLED=0` и с перехваченными на `PATH` `rustc`/`cargo`.
+
+Inline-составные значения ограничены 128 уровнями. Ключи обычных карт сортируются
+по алфавиту (O(n log n)); канонизация и форматирование сохраняют порядок источника.
+Пути `encoding/json` имеют собственные пределы глубины; бесконечная глубина не
+обещана. Node-документация и Go-сборка/тесты — инструменты разработки, не runtime
+зависимости `/pure`.
 
 >>>>> lang=zh
-## 选择 pure-Go 后端
+# Pure-Go 后端
 
-默认情况下，包会把调用分发到原生 `ktav_cabi` 共享库（purego，无
-cgo）。另一个完全自包含的实现——以 Go 编写的解析器和生成器——同样
-可用，以相同签名覆盖所有公开操作：
+使用 `go get github.com/ktav-lang/golang/pure@v0.8.1` 安装，然后导入：
 
 ```go
-ktav.UsePure()                      // 或：
-ktav.UseBackend(ktav.BackendPure)
+import "github.com/ktav-lang/golang/pure"
+v, err := pure.Loads(src)
+ops := pure.New()
 ```
 
-- `UsePure` / `UseBackend(ktav.BackendPure)`：pure-Go 路径。它不加载、
-  不下载、也不需要原生库，且不启动子进程，因此在未安装 `ktav_cabi`
-  制品的机器上同样可用。
-- `UseNative` / `UseBackend(ktav.BackendNative)`：经 purego `ktav_cabi`
-  的路径。这是默认值，也是历史行为。
-- 两个方向都没有自动回退：所选后端失败时，你得到的是错误，而不是
-  另一个实现。
+包级函数和 `pure.New()` 提供全部八项操作：`Loads`、`LoadsStrict`、`LoadsInto`、
+`Dumps`、`DumpsForceStrings`、`EmitCanonical`、`FormatSource`、
+`CanonicalFromSource`，以及完整的 `pure.Error`/`pure.Span` 别名。该包共享
+`internal/engine`；其 runtime 依赖图仅使用标准库。
 
-请在启动时、第一次解析之前选择一次后端。两次调用之间可以切换实现；
-进行中的调用总是在它开始时所用的后端上完成。
+兼容的根 API `ktav.New(ktav.BackendPure)` 仍保留，但根包导入即需要
+`github.com/ebitengine/purego v0.8.4` 和 `golang.org/x/sys v0.28.0`，即使选择
+BackendPure。离线打包消费者使用仅文件代理、readonly 模式和导入白名单，验证
+`/pure` 没有外部 runtime 导入。其 CI 任务通过已安装的 `/pure` 产物运行完整的
+0.8 一致性语料，使用 `CGO_ENABLED=0` 并在 `PATH` 上拦截 `rustc`/`cargo`。
+
+Inline 复合值限制为 128 层。普通映射的规范键按字母排序（O(n log n)）；
+源规范化和格式化保留源顺序。`encoding/json` 桥接路径有自身深度限制；不承诺
+无限深度。Node 文档和 Go 构建/测试命令是开发工具，而非 `/pure` runtime 依赖。
 

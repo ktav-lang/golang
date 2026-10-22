@@ -20,6 +20,7 @@ import (
 
 	ktav "github.com/ktav-lang/golang"
 	"github.com/ktav-lang/golang/internal/native"
+	"github.com/ktav-lang/golang/pure"
 )
 
 // pureForced reports whether the suite runs in pure-only mode (the CI
@@ -29,13 +30,9 @@ func pureForced() bool { return os.Getenv("KTAV_FORCE_PURE") == "1" }
 // pureOps returns a fresh Operations bound to BackendPure. Instances
 // never read or write the package-global backend, so tests (including
 // future parallel ones) cannot contaminate each other.
-func pureOps(t *testing.T) *ktav.Operations {
+func pureOps(t *testing.T) *pure.Operations {
 	t.Helper()
-	ops, err := ktav.New(ktav.BackendPure)
-	if err != nil {
-		t.Fatalf("ktav.New(BackendPure): %v", err)
-	}
-	return ops
+	return pure.New()
 }
 
 // nativeOps returns a fresh Operations bound to BackendNative. Only
