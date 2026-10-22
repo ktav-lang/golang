@@ -288,9 +288,31 @@ x.y\.z: v
 使用 `go get github.com/ktav-lang/golang/pure@v0.8.1` 安装，然后导入：
 
 ```go
-import "github.com/ktav-lang/golang/pure"
-v, err := pure.Loads(src)
-ops := pure.New()
+package main
+
+import (
+    "fmt"
+    "log"
+
+    "github.com/ktav-lang/golang/pure"
+)
+
+func main() {
+    value, err := pure.Loads("server.port: 8080\n")
+    if err != nil {
+        log.Fatal(err)
+    }
+    text, err := pure.Dumps(value)
+    if err != nil {
+        log.Fatal(err)
+    }
+    restored, err := pure.Loads(text)
+    if err != nil {
+        log.Fatal(err)
+    }
+    fmt.Print(text)
+    fmt.Printf("%#v\n", restored)
+}
 ```
 
 包级函数和 `pure.New()` 提供全部八项操作：`Loads`、`LoadsStrict`、`LoadsInto`、

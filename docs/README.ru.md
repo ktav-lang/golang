@@ -301,9 +301,31 @@ x.y\.z: v
 Установите через `go get github.com/ktav-lang/golang/pure@v0.8.1`, затем импортируйте:
 
 ```go
-import "github.com/ktav-lang/golang/pure"
-v, err := pure.Loads(src)
-ops := pure.New()
+package main
+
+import (
+    "fmt"
+    "log"
+
+    "github.com/ktav-lang/golang/pure"
+)
+
+func main() {
+    value, err := pure.Loads("server.port: 8080\n")
+    if err != nil {
+        log.Fatal(err)
+    }
+    text, err := pure.Dumps(value)
+    if err != nil {
+        log.Fatal(err)
+    }
+    restored, err := pure.Loads(text)
+    if err != nil {
+        log.Fatal(err)
+    }
+    fmt.Print(text)
+    fmt.Printf("%#v\n", restored)
+}
 ```
 
 Функции пакета и `pure.New()` предоставляют все восемь операций: `Loads`,

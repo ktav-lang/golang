@@ -84,13 +84,37 @@ jobs:
         with:
           tool: cargo-zigbuild
 
+      - name: Verify published Rust core provenance
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo generate-lockfile
+          cargo update -p ktav --precise 0.8.1
+          python3 - <<'PY'
+          import tomllib
+          with open('Cargo.lock', 'rb') as source:
+              packages = tomllib.load(source)['package']
+          core = [package for package in packages if package['name'] == 'ktav']
+          if len(core) != 1:
+              raise SystemExit('expected exactly one ktav core')
+          expected = {
+              'version': '0.8.1',
+              'source': 'registry+https://github.com/rust-lang/crates.io-index',
+              'checksum': '7140dfe2fa6c320e74768cd6a637828c2d26f81746254f4fcd805f3993bd3fd5',
+          }
+          for field, value in expected.items():
+              if core[0].get(field) != value:
+                  raise SystemExit(f'ktav {field} mismatch: {core[0].get(field)!r}')
+          print('published ktav 0.8.1 core provenance verified')
+          PY
+
       - name: Build (zigbuild)
         if: matrix.settings.use-zigbuild
-        run: cargo zigbuild --release -p ktav-cabi --target ${{ matrix.settings.target }}.2.17
+        run: cargo zigbuild --locked --release -p ktav-cabi --target ${{ matrix.settings.target }}.2.17
 
       - name: Build (native)
         if: ${{ !matrix.settings.use-zigbuild }}
-        run: cargo build --release -p ktav-cabi --target ${{ matrix.settings.target }}
+        run: cargo build --locked --release -p ktav-cabi --target ${{ matrix.settings.target }}
 
       - name: Rename artifact (Unix)
         if: runner.os != 'Windows'
