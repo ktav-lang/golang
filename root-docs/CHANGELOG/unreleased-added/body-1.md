@@ -1,30 +1,51 @@
 >>>>> lang=en
+## 0.8.1 — 2026-10-22
+
+### Added
+
+- A pure-Go `Operations` backend, selectable per instance or globally for all 8 public operations.
+- The native core is upgraded to the published Rust `ktav` 0.8.1 with spec 0.8.1, covering all five corpus categories (valid, invalid, unrepresentable, parseable-unrepresentable, strict-lossy).
 
 ### Fixed
 
-- `FormatSource` keeps a whole-line comment that precedes a dotted-key pair (`## c` before `a.b: 1`): the comment now attaches to the terminal pair of the expanded path instead of being dropped, and formatting remains a fixed point.
-- Depth safety in pure mode: dotted-key nesting (§5.3.2) is unbounded by the spec, so the pure canonical/pretty writer, the formatter, the tagged-JSON encoder/decoder and the trivia walk are all iterative (explicit work stacks); ordinary map/slice emission (`json.Marshal`) and the typed `LoadsInto` decode (`json.Decoder.Decode`) stay on `encoding/json`, whose own nesting limit returns an error, not a crash. Deep documents parse, canonicalise and format without recursion-depth failures, and no artificial depth limit is imposed on ordinary spec inputs.
-- Cyclic Go values (a map or slice containing itself on the active path) are now rejected by `Dumps`/`DumpsForceStrings`/`EmitCanonical` with a structured `Message`-class error instead of recursing; shared sub-maps on sibling branches (DAG references) still encode. The public Go-side bridge conversions (`decodeJSON`, `toTagged`, `prepareWriterValue`, untagged flattening) are iterative.
-- Cycle detection is now correct for multi-container loops: an explicit ENTER/EXIT active-path scheme rejects a→b→a cycles on the first revisit (slice identity includes len/cap); `Loads`/`LoadsStrict`/`LoadsInto` reject trailing data after the top-level wire value and accept an empty-string JSON key; the `::` raw-marker decision restores the §5.2 keyword/shortcut guards (a Go String `"null"`, `"true"`, `"false"`, `"("`, `"(("`, `"()"`, `"(())"` re-parses as the same String, and force-string of a Bool re-parses as String too).
-- Writer conversion is honest O(input + output): `prepareWriterValue` keeps one shared path buffer (snapshot only on the cold error path) so error paths report exact nested keys; scan-probe byte counters run inside the classification scans, bounded by one pass over the body — documented cost, not a claimed zero. Map key sorting in the writer conversion is O(n log n) per map (alphabetical wire order), on top of the linear walk.
+- Empty source buffers now pass a non-null pointer through the C ABI, preserving the empty Object and zero-byte canonical document contract with Rust debug builds.
+- Pure parser/writer traversal of dotted-key nesting is iterative. Public map/slice emission and typed `LoadsInto` decoding still use `encoding/json`; this release does not promise unlimited nesting through that bridge.
+- `FormatSource` preserves comments preceding dotted-key pairs and keeps trailing comments inside wrapped root Arrays; formatting remains a fixed point.
+- Cyclic Go values are rejected by `Dumps`/`DumpsForceStrings`/`EmitCanonical` with a structured `Message`-class error instead of recursing; shared sub-maps on sibling branches still encode.
+- Cycle detection is correct for multi-container loops; `Loads`/`LoadsStrict`/`LoadsInto` reject trailing data after the top-level wire value and accept an empty-string JSON key; the `::` raw-marker decision restores the §5.2 keyword/shortcut guards.
+- Writer key sorting in the writer conversion is O(n log n) per map (alphabetical wire order), on top of the linear walk.
 
 >>>>> lang=ru
+## 0.8.1 — 2026-10-22
+
+### Добавлено
+
+- Pure-Go бэкенд `Operations`, выбираемый на экземпляр или глобально для всех 8 публичных операций.
+- Нативное ядро обновлено до опубликованного Rust `ktav` 0.8.1 со спецификацией 0.8.1 и всеми пятью категориями корпуса (valid, invalid, unrepresentable, parseable-unrepresentable, strict-lossy).
 
 ### Исправлено
 
-- `FormatSource` сохраняет строчный комментарий, стоящий перед парой с составным (точечным) ключом (`## c` перед `a.b: 1`): комментарий теперь привязывается к терминальной паре развёрнутого пути, а не теряется; форматирование остаётся неподвижной точкой.
-- Безопасность глубины в pure-режиме: вложенность точечных ключей (§5.3.2) спецификацией не ограничена, поэтому канонический/красивый писатель, форматировщик, кодек tagged-JSON и обход тривий итеративны (явные стеки задач); обычная эмиссия карт/срезов (`json.Marshal`) и типизированное декодирование `LoadsInto` (`json.Decoder.Decode`) остаются на `encoding/json`, чей собственный предел вложенности возвращает ошибку, а не падение. Глубокие документы разбираются, канонизируются и форматируются без переполнения стека, и на обычные входы спецификации искусственные ограничения глубины не накладываются.
-- Циклические значения Go (карта или срез, содержащие самих себя на активном пути) теперь отклоняются `Dumps`/`DumpsForceStrings`/`EmitCanonical` структурной ошибкой класса `Message` вместо рекурсии; общие вложенные карты на соседних ветвях (DAG) по-прежнему кодируются. Преобразования публичного моста на стороне Go (`decodeJSON`, `toTagged`, `prepareWriterValue`, разглаживание) итеративны.
-- Обнаружение циклов теперь корректно для многоконтурных циклов: явная схема ENTER/EXIT на активном пути отклоняет цикл a→b→a при первом повторном заходе (идентичность срезов учитывает длину и ёмкость); `Loads`/`LoadsStrict`/`LoadsInto` отклоняют данные после верхнеуровневого значения провода и принимают пустой JSON-ключ; решение о `::`-маркере восстанавливает guards §5.2 (Go-строка `"null"`, `"true"`, `"false"`, `"("`, `"(("`, `"()"`, `"(())"` разбирается обратно в ту же строку, принудительная строка Bool — тоже как String).
-- Сложность преобразования писателя честно равна O(вход + выход): `prepareWriterValue` держит один общий буфер пути (копия — только на холодном пути ошибки), пути ошибок называют точные вложенные ключи; байтовые счётчики scan-probe выполняются внутри сканов классификации, ограничены одним проходом по телу — задокументированная стоимость, а не заявленный ноль. Сортировка ключей карт в преобразовании писателя — O(n log n) на карту (алфавитный порядок провода), поверх линейного обхода.
+- Пустой исходный буфер передаётся через C ABI с ненулевым указателем: debug-сборки Rust сохраняют контракт пустого Object и canonical-документа из нуля байтов.
+- Обход вложенности точечных ключей в pure-парсере и генераторе итеративен. Публичная сериализация карт/срезов и типизированное декодирование `LoadsInto` по-прежнему используют `encoding/json`; выпуск не гарантирует неограниченную вложенность через этот мост.
+- `FormatSource` сохраняет комментарии перед парами с точечными ключами и завершающие комментарии внутри явного корневого Array; форматирование остаётся неподвижной точкой.
+- Циклические значения Go отклоняются `Dumps`/`DumpsForceStrings`/`EmitCanonical` структурной ошибкой класса `Message` вместо рекурсии; общие вложенные карты на соседних ветвях по-прежнему кодируются.
+- Обнаружение циклов корректно для многоконтурных циклов; `Loads`/`LoadsStrict`/`LoadsInto` отклоняют данные после верхнеуровневого значения провода и принимают пустой JSON-ключ; решение о `::`-маркере восстанавливает guards §5.2.
+- Сортировка ключей карт в преобразовании писателя — O(n log n) на карту (алфавитный порядок провода), поверх линейного обхода.
 
 >>>>> lang=zh
+## 0.8.1 — 2026-10-22
+
+### 新增
+
+- Pure-Go 的 `Operations` 后端，可按实例或全局选择，覆盖全部 8 个公开操作。
+- 原生核心升级到已发布的 Rust `ktav` 0.8.1，配套规范 0.8.1，覆盖全部五类语料（valid、invalid、unrepresentable、parseable-unrepresentable、strict-lossy）。
 
 ### 修复
 
-- `FormatSource` 现在会保留位于点号键对之前的整行注释（`a.b: 1` 之前的 `## c`）：注释会附加到展开路径的末端键对上，而不再丢失，且格式化仍是不动点。
-- Pure 模式的深度安全：点号键嵌套（§5.3.2）不受规范限制，因此 pure 模式的规范/美观写入器、格式化器、tagged-JSON 编解码器与 trivia 遍历全部为迭代实现（显式工作栈）；普通的映射/切片发射（`json.Marshal`）与 `LoadsInto` 的类型化解码（`json.Decoder.Decode`）仍走 `encoding/json`，其自带嵌套上限，超限返回错误而非崩溃。深层文档可以解析、规范化与格式化而不会栈溢出，也不会对普通规范输入施加人为深度限制。
-- 循环引用的 Go 值（映射或切片在活跃路径上包含自身）现在会被 `Dumps`/`DumpsForceStrings`/`EmitCanonical` 以 `Message` 类结构化错误拒绝，而非递归失控；兄弟分支间共享的子映射（DAG 引用）仍可编码。Go 侧公共桥转换（`decodeJSON`、`toTagged`、`prepareWriterValue`、去标签展平）均为迭代实现。
-- 循环检测现在对多容器循环也正确：显式的 ENTER/EXIT 活跃路径方案在首次重访即拒绝 a→b→a 循环（切片身份包含长度与容量）；`Loads`/`LoadsStrict`/`LoadsInto` 拒绝顶层线格式值之后的尾随数据并接受空字符串 JSON 键；`::` 原始标记判定恢复了 §5.2 的关键字/捷径守卫（Go 字符串 `"null"`、`"true"`、`"false"`、`"("`、`"(("`、`"()"`、`"(())"` 重解析为同一字符串，Bool 的强制字符串也重解析为 String）。
-- 写入器转换的复杂度如实为 O(输入 + 输出)：`prepareWriterValue` 只维护一个共享路径缓冲（仅在冷错误路径上快照），错误路径报告精确的嵌套键；扫描探针字节计数在分类扫描内部执行，以对主体的一次遍历为界——记录在案的成本，而非宣称的零。写入器转换中对每个映射的键排序为 O(n log n)（线格式字母序），叠加在线性遍历之上。
+- 空源缓冲区通过 C ABI 传递非空指针，使 Rust debug 构建保持空 Object 和零字节 canonical 文档的约定。
+- Pure 解析器和写入器以迭代方式遍历点号键嵌套。公开的映射/切片序列化与 `LoadsInto` 类型化解码仍使用 `encoding/json`；本版本不保证通过该桥接层支持无限嵌套。
+- `FormatSource` 保留点号键对之前的注释，以及带括号根 Array 内的尾随注释；格式化仍是不动点。
+- 循环引用的 Go 值会被 `Dumps`/`DumpsForceStrings`/`EmitCanonical` 以 `Message` 类结构化错误拒绝，而非递归失控；兄弟分支间共享的子映射仍可编码。
+- 循环检测对多容器循环也正确；`Loads`/`LoadsStrict`/`LoadsInto` 拒绝顶层线格式值之后的尾随数据并接受空字符串 JSON 键；`::` 原始标记判定恢复 §5.2 的关键字/捷径守卫。
+- 写入器转换中对每个映射的键排序为 O(n log n)（线格式字母序），叠加在线性遍历之上。
 

@@ -100,6 +100,51 @@ jobs:
         run: go test -v ./...
 
   # ------------------------------------------------------------------
+  # Native DEBUG build: release-mode Rust optimizations can hide the
+  # `slice::from_raw_parts` non-null precondition violation that a
+  # zero-length input triggers (len 0 with a null pointer is UB that
+  # debug assertions catch, but release silently accepts). This job
+  # builds the cabi WITHOUT --release and runs the empty-source
+  # regression so reverting the fixed `emptyInputByte` anchor fails
+  # here.
+  # ------------------------------------------------------------------
+  test-native-debug:
+    name: native debug build / empty-source ABI regression
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Pin spec submodule to 0.8.1
+        run: |
+          git -C spec fetch --depth 1 origin 388982118c0d8f767bf283356ac9c9bb50fdc3f5
+          git -C spec checkout --detach 388982118c0d8f767bf283356ac9c9bb50fdc3f5
+
+      - uses: dtolnay/rust-toolchain@stable
+      # Distinct cache key: debug artifacts must not collide with the
+      # release-mode cache used by the test matrix above.
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: debug
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.23"
+
+      # No --release: the debug build keeps the precondition checks that
+      # release mode can optimize away.
+      - name: Build native library (debug)
+        run: cargo build -p ktav-cabi
+
+      # main_test.go honours $KTAV_LIB_PATH, overriding the default
+      # target/release/<cabi> probe path.
+      - name: Empty-source ABI regression (native debug)
+        env:
+          KTAV_LIB_PATH: ${{ github.workspace }}/target/debug/libktav_cabi.so
+        run: go test -count=1 -run '^TestEmptySourceAcrossNativeOperations$' ./...
+
+  # ------------------------------------------------------------------
   # Pure-Go backend: Go only, NO rust toolchain and NO cabi artifact.
   # KTAV_FORCE_PURE=1 makes TestMain default every test to the pure
   # backend; requireCabi-gated tests FAIL here (never skip) — the

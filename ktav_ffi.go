@@ -80,6 +80,8 @@ func formatSource(src []byte) ([]byte, error) {
 	return callStringFn(s, s.Format, src)
 }
 
+var emptyInputByte byte
+
 // callStringFn invokes a C ABI function with signature
 //
 //	int fn(const u8 *src, usize src_len,
@@ -97,6 +99,8 @@ func callStringFn(s *native.Syms, fn uintptr, src []byte) ([]byte, error) {
 	)
 	if len(src) > 0 {
 		srcPtr = uintptr(unsafe.Pointer(&src[0]))
+	} else {
+		srcPtr = uintptr(unsafe.Pointer(&emptyInputByte))
 	}
 
 	rc, _, _ := purego.SyscallN(

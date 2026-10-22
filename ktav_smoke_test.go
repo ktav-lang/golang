@@ -71,6 +71,31 @@ db.timeout: 30
 	}
 }
 
+func TestEmptySourceAcrossNativeOperations(t *testing.T) {
+	requireCabi(t)
+	for _, parse := range []struct {
+		name string
+		call func(string) (any, error)
+	}{{"lax", ktav.Loads}, {"strict", ktav.LoadsStrict}} {
+		t.Run(parse.name, func(t *testing.T) {
+			got, err := parse.call("")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !reflect.DeepEqual(got, map[string]any{}) {
+				t.Fatalf("empty document = %#v, want empty Object", got)
+			}
+		})
+	}
+	canonical, err := ktav.CanonicalFromSource("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if canonical != "" {
+		t.Fatalf("empty Object canonical bytes = %q, want zero bytes", canonical)
+	}
+}
+
 func TestLoadsStrict(t *testing.T) {
 	requireCabi(t)
 	if _, err := ktav.LoadsStrict("version: 1.10\n"); err == nil {

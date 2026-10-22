@@ -11,14 +11,21 @@ This changelog tracks **binding releases**, not changes to the Ktav format
 itself — for the latter see
 [`ktav-lang/spec`](https://github.com/ktav-lang/spec/blob/main/CHANGELOG.md).
 
+## 0.8.1 — 2026-10-22
+
+### Added
+
+- A pure-Go `Operations` backend, selectable per instance or globally for all 8 public operations.
+- The native core is upgraded to the published Rust `ktav` 0.8.1 with spec 0.8.1, covering all five corpus categories (valid, invalid, unrepresentable, parseable-unrepresentable, strict-lossy).
 
 ### Fixed
 
-- `FormatSource` keeps a whole-line comment that precedes a dotted-key pair (`## c` before `a.b: 1`): the comment now attaches to the terminal pair of the expanded path instead of being dropped, and formatting remains a fixed point.
-- Depth safety in pure mode: dotted-key nesting (§5.3.2) is unbounded by the spec, so the pure canonical/pretty writer, the formatter, the tagged-JSON encoder/decoder and the trivia walk are all iterative (explicit work stacks); ordinary map/slice emission (`json.Marshal`) and the typed `LoadsInto` decode (`json.Decoder.Decode`) stay on `encoding/json`, whose own nesting limit returns an error, not a crash. Deep documents parse, canonicalise and format without recursion-depth failures, and no artificial depth limit is imposed on ordinary spec inputs.
-- Cyclic Go values (a map or slice containing itself on the active path) are now rejected by `Dumps`/`DumpsForceStrings`/`EmitCanonical` with a structured `Message`-class error instead of recursing; shared sub-maps on sibling branches (DAG references) still encode. The public Go-side bridge conversions (`decodeJSON`, `toTagged`, `prepareWriterValue`, untagged flattening) are iterative.
-- Cycle detection is now correct for multi-container loops: an explicit ENTER/EXIT active-path scheme rejects a→b→a cycles on the first revisit (slice identity includes len/cap); `Loads`/`LoadsStrict`/`LoadsInto` reject trailing data after the top-level wire value and accept an empty-string JSON key; the `::` raw-marker decision restores the §5.2 keyword/shortcut guards (a Go String `"null"`, `"true"`, `"false"`, `"("`, `"(("`, `"()"`, `"(())"` re-parses as the same String, and force-string of a Bool re-parses as String too).
-- Writer conversion is honest O(input + output): `prepareWriterValue` keeps one shared path buffer (snapshot only on the cold error path) so error paths report exact nested keys; scan-probe byte counters run inside the classification scans, bounded by one pass over the body — documented cost, not a claimed zero. Map key sorting in the writer conversion is O(n log n) per map (alphabetical wire order), on top of the linear walk.
+- Empty source buffers now pass a non-null pointer through the C ABI, preserving the empty Object and zero-byte canonical document contract with Rust debug builds.
+- Pure parser/writer traversal of dotted-key nesting is iterative. Public map/slice emission and typed `LoadsInto` decoding still use `encoding/json`; this release does not promise unlimited nesting through that bridge.
+- `FormatSource` preserves comments preceding dotted-key pairs and keeps trailing comments inside wrapped root Arrays; formatting remains a fixed point.
+- Cyclic Go values are rejected by `Dumps`/`DumpsForceStrings`/`EmitCanonical` with a structured `Message`-class error instead of recursing; shared sub-maps on sibling branches still encode.
+- Cycle detection is correct for multi-container loops; `Loads`/`LoadsStrict`/`LoadsInto` reject trailing data after the top-level wire value and accept an empty-string JSON key; the `::` raw-marker decision restores the §5.2 keyword/shortcut guards.
+- Writer key sorting in the writer conversion is O(n log n) per map (alphabetical wire order), on top of the linear walk.
 
 ## 0.8.0 — 2026-09-27
 
