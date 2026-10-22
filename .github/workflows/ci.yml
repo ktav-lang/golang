@@ -37,6 +37,11 @@ jobs:
         with:
           submodules: recursive
 
+      - name: Pin spec submodule to 0.8.1
+        run: |
+          git -C spec fetch --depth 1 origin 388982118c0d8f767bf283356ac9c9bb50fdc3f5
+          git -C spec checkout --detach 388982118c0d8f767bf283356ac9c9bb50fdc3f5
+
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
 
@@ -49,6 +54,80 @@ jobs:
 
       - name: Go tests
         run: go test -v ./...
+
+  # ------------------------------------------------------------------
+  # Pure-Go backend: Go only, NO rust toolchain and NO cabi artifact.
+  # KTAV_FORCE_PURE=1 makes TestMain default every test to the pure
+  # backend; requireCabi-gated tests FAIL here (never skip) — the
+  # native matrix above covers them. Every TestPure*/corpus-guard/
+  # error-contract/README test must run against the real 0.8 corpus
+  # with zero native loading (TestPureCorpusNeverLoadsNative and
+  # TestPureNeverLoadsNativeLibrary guard that).
+  # ------------------------------------------------------------------
+  test-pure:
+    name: pure backend / no native library
+    runs-on: ubuntu-latest
+    env:
+      KTAV_FORCE_PURE: "1"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Pin spec submodule to 0.8.1
+        run: |
+          git -C spec fetch --depth 1 origin 388982118c0d8f767bf283356ac9c9bb50fdc3f5
+          git -C spec checkout --detach 388982118c0d8f767bf283356ac9c9bb50fdc3f5
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.23"
+
+      - name: Go tests (pure backend, no cabi built)
+        run: go test -v -run '^(TestPure|TestProbe|TestCorpusManifest|TestLoadCorpusManifest|TestReadFixtureSource|TestWriter|TestDumpsForceStringsPreservesNonFiniteFloatText|TestInvalidUTF8|TestLineOfOffset|TestFirstInvalidUTF8|TestReadme)' ./...
+
+  # ------------------------------------------------------------------
+  # Packaged pure consumer: a GENUINE distribution representation. The
+  # job builds a file-based Go module proxy from the checkout
+  # (scripts/module_proxy.py: @v/list + v0.8.1.info/.mod/.zip, zip paths
+  # `github.com/ktav-lang/golang@v0.8.1/...` per `go help module-proxy`),
+  # then installs the module THROUGH that proxy (GOPROXY=file://…,
+  # GOSUMDB=off, GOFLAGS=-mod=mod) into an independent temp module and
+  # runs internal/pureconsumer/main.go — UsePure plus every public
+  # operation, with NO native artifact and NO checkout -replace.
+  # Cleanup stays in the runner temp dir; no repo files are touched.
+  # ------------------------------------------------------------------
+  test-packaged-pure:
+    name: packaged pure consumer / module proxy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Pin spec submodule to 0.8.1
+        run: |
+          git -C spec fetch --depth 1 origin 388982118c0d8f767bf283356ac9c9bb50fdc3f5
+          git -C spec checkout --detach 388982118c0d8f767bf283356ac9c9bb50fdc3f5
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.23"
+
+      - name: Run pure consumer installed through a file:// module proxy
+        run: |
+          set -euo pipefail
+          work="$(mktemp -d "${RUNNER_TEMP:-/tmp}/ktav-consumer.XXXXXX")"
+          trap 'rm -rf "$work"' EXIT
+          python3 scripts/module_proxy.py "$GITHUB_WORKSPACE" v0.8.1 "$work/proxy"
+          cp internal/pureconsumer/main.go "$work/main.go"
+          cd "$work"
+          export GOPROXY="file://$work/proxy"
+          export GOSUMDB=off
+          export GOFLAGS=-mod=mod
+          go mod init example.com/ktav-pure-consumer
+          go get github.com/ktav-lang/golang@v0.8.1
+          go run .
 
   lint-rust:
     name: rust clippy + fmt

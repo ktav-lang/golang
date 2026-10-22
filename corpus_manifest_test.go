@@ -36,7 +36,7 @@ type fixtureFlag struct {
 }
 
 var spec08Counts = map[string]int{
-	"valid": 223, "invalid": 74, "unrepresentable": 5,
+	"valid": 228, "invalid": 90, "unrepresentable": 5,
 	"parseable-unrepresentable": 4, "strict-lossy": 13,
 }
 

@@ -7,6 +7,7 @@ import (
 	"runtime"
 	"testing"
 
+	ktav "github.com/ktav-lang/golang"
 	"github.com/ktav-lang/golang/internal/native"
 )
 
@@ -32,6 +33,18 @@ func TestMain(m *testing.M) {
 		path = override
 	}
 	native.SetLibraryPath(path)
+	// KTAV_FORCE_PURE=1 (the pure-backend CI job, where no cabi
+	// artifact is ever built) defaults the whole suite to the pure
+	// backend, so every test without an explicit requireCabi gate
+	// exercises the pure path with zero native loading. requireCabi
+	// tests still FAIL (never skip) in that job — the native job
+	// covers them.
+	if os.Getenv("KTAV_FORCE_PURE") == "1" {
+		if err := ktav.UsePure(); err != nil {
+			fmt.Fprintf(os.Stderr, "force pure backend: %v\n", err)
+			os.Exit(1)
+		}
+	}
 	os.Exit(m.Run())
 }
 

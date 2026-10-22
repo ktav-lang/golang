@@ -283,6 +283,47 @@ x.y\.z: v
    `github.com/ktav-lang/golang/releases/download/v<version>/<name>`
    下载匹配的资产，缓存到 (2)。安装后首次调用需要联网。
 
+## 选择 pure-Go 后端
+
+默认情况下，包会把调用分发到原生 `ktav_cabi` 共享库（purego，无
+cgo）。另一个完全自包含的实现——以 Go 编写的解析器和生成器——同样
+可用，以相同签名覆盖所有公开操作：
+
+```go
+ktav.UsePure()                      // 或：
+ktav.UseBackend(ktav.BackendPure)
+```
+
+- `UsePure` / `UseBackend(ktav.BackendPure)`：pure-Go 路径。它不加载、
+  不下载、也不需要原生库，且不启动子进程，因此在未安装 `ktav_cabi`
+  制品的机器上同样可用。
+- `UseNative` / `UseBackend(ktav.BackendNative)`：经 purego `ktav_cabi`
+  的路径。这是默认值，也是历史行为。
+- 两个方向都没有自动回退：所选后端失败时，你得到的是错误，而不是
+  另一个实现。
+
+请在启动时、第一次解析之前选择一次后端。两次调用之间可以切换实现；
+进行中的调用总是在它开始时所用的后端上完成。
+
+对于不应依赖进程全局状态的并发或库代码，可将操作显式绑定到某一个后
+端：
+
+```go
+ops, err := ktav.New(ktav.BackendPure)
+ops.Loads(src) // 以及 LoadsStrict、LoadsInto、Dumps、
+               // DumpsForceStrings、EmitCanonical、FormatSource、
+               // CanonicalFromSource —— 全部绑定到该实例
+```
+
+`Operations` 值携带自己的后端：其方法不会读取或修改全局默认值，因此
+各实例彼此隔离，也与 `UseBackend` 隔离。包级函数保留全局默认（原生）
+行为。
+
+Pure 模式的限制：解码值保持文档规定的 `map[string]any` 契约（解码键
+顺序无法表示）；对普通 Go 映射，`EmitCanonical` 保持文档规定的字母
+序，而 `CanonicalFromSource` 与 `FormatSource` 保留插入顺序；内联复合
+结构嵌套上限为 128 层（§5.8.4，实现定义，与参考实现一致）。点号键嵌套（§5.3.2）不设上限：pure 写入器、tagged-JSON 桥与 trivia 遍历均为迭代实现（显式工作栈），深层文档不会导致栈溢出。
+
 ## 运行时支持
 
 - Go 1.21+。

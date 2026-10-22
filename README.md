@@ -293,6 +293,53 @@ At first call the Go package resolves `ktav_cabi` in this order:
    from `github.com/ktav-lang/golang/releases/download/v<version>/<name>`
    and cached under (2). Requires network on first call after install.
 
+## Choosing the pure-Go backend
+
+By default the package dispatches to the native `ktav_cabi` shared
+library (purego, no cgo). A second, fully self-contained implementation
+— parser and generator written in Go — is available and covers every
+public operation with identical signatures:
+
+```go
+ktav.UsePure()                      // or:
+ktav.UseBackend(ktav.BackendPure)
+```
+
+- `UsePure` / `UseBackend(ktav.BackendPure)`: pure-Go path. It never
+  loads, downloads or requires the native library and never spawns a
+  subprocess, so it also works on machines where no `ktav_cabi`
+  artifact is installed.
+- `UseNative` / `UseBackend(ktav.BackendNative)`: the purego `ktav_cabi`
+  path. This is the default and the historical behaviour.
+- There is no automatic fallback in either direction: if the selected
+  backend fails, you get an error, not the other implementation.
+
+Call the selector once at startup, before the first parse. The
+implementation can be switched between calls; a call in flight always
+finishes on the backend it started on.
+
+For concurrent or library code that must not depend on process-global
+state, bind the operations to one backend explicitly:
+
+```go
+ops, err := ktav.New(ktav.BackendPure)
+ops.Loads(src) // plus LoadsStrict, LoadsInto, Dumps,
+               // DumpsForceStrings, EmitCanonical, FormatSource,
+               // CanonicalFromSource — all bound to this instance
+```
+
+An `Operations` value carries its own backend: its methods never read
+or write the global default, so instances stay isolated from each other
+and from `UseBackend`. The package-level functions keep the global
+default (native) behaviour.
+
+Limits of pure mode: decoded values keep the documented
+`map[string]any` contract (decoded key order is not represented);
+`EmitCanonical` over plain Go maps keeps the documented alphabetical
+order, while `CanonicalFromSource` and `FormatSource` preserve source
+insertion order; inline compound nesting is capped at 128 levels
+(§5.8.4, implementation-defined, mirroring the reference). Dotted-key nesting (§5.3.2) is NOT capped: the pure writers, the tagged-JSON bridge and the trivia walk are iterative (explicit work stacks), so deep documents cannot overflow the stack.
+
 ## Runtime support
 
 - Go 1.21+.

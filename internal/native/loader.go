@@ -20,11 +20,14 @@ import (
 	"runtime"
 	"sync"
 	"time"
+	"unsafe"
+
+	"github.com/ebitengine/purego"
 )
 
 // LibVersion is the version of the companion `ktav_cabi` shared library
 // this Go module expects. It is in lockstep with the Go module tag.
-const LibVersion = "0.8.0"
+const LibVersion = "0.8.1"
 
 // releaseAssetBase is the GitHub Release where prebuilt binaries live.
 // Tagged `v<LibVersion>`; per-platform asset naming is handled below.
@@ -58,6 +61,11 @@ var (
 // Intended for the test suite — production users override via
 // `$KTAV_LIB_PATH`.
 func SetLibraryPath(path string) { libPathOverride = path }
+
+// Loaded reports whether the shared library has been dlopened in this
+// process. The pure-backend tests assert it stays false: selecting
+// BackendPure must never touch the loader.
+func Loaded() bool { return loaded != nil }
 
 // Load resolves and loads the shared library exactly once, then returns
 // the same Syms on every subsequent call.
@@ -106,9 +114,44 @@ func Load() (*Syms, error) {
 			loadErr = err
 			return
 		}
+		// Artifact provenance check: the loaded binary must declare
+		// exactly the version this module expects (ktav_version), no
+		// matter how it was resolved (cache, download, $KTAV_LIB_PATH
+		// or SetLibraryPath). A mismatched override FAILS here rather
+		// than silently binding an out-of-sync cabi.
+		if err := verifyVersion(s); err != nil {
+			loadErr = err
+			return
+		}
 		loaded = s
 	})
 	return loaded, loadErr
+}
+
+// verifyVersion dlsym-calls ktav_version and requires an exact match
+// with LibVersion. It is the ONLY loaded-artifact heuristic.
+func verifyVersion(s *Syms) error {
+	ret, _, _ := purego.SyscallN(s.Version)
+	if ret == 0 {
+		return fmt.Errorf("ktav_cabi version query returned null; expected %s", LibVersion)
+	}
+	// `const char *` from Rust with static lifetime; walk to NUL.
+	base := unsafe.Pointer(ret)
+	n := 0
+	for *(*byte)(unsafe.Add(base, n)) != 0 {
+		n++
+	}
+	return checkArtifactVersion(string(unsafe.Slice((*byte)(base), n)))
+}
+
+// checkArtifactVersion compares a reported artifact version string
+// against LibVersion. Split out from verifyVersion so both the match
+// and mismatch paths are unit-testable without dlopening a library.
+func checkArtifactVersion(got string) error {
+	if got != LibVersion {
+		return fmt.Errorf("ktav_cabi version %s does not match expected %s", got, LibVersion)
+	}
+	return nil
 }
 
 func bindSym(handle uintptr, name string, out *uintptr) error {

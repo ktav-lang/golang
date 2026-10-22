@@ -160,6 +160,7 @@ func lineOfOffset(src string, pos int) int {
 
 func unrepresentableError(reason string, path []string) *Error {
 	var message string
+	spec := "§5.9.0"
 	switch reason {
 	case "ScalarRoot":
 		message = "ScalarRoot: the document root is not an Object or an Array (spec § 5.9.0)"
@@ -167,6 +168,18 @@ func unrepresentableError(reason string, path []string) *Error {
 		message = "EmptyKeyName: an Object pair's name is the empty string (spec § 5.9.0)"
 	case "NonFiniteFloat":
 		message = "NonFiniteFloat: a Float is NaN or ±Infinity (spec § 5.9.0)"
+	case "CRByte":
+		spec = "§5.9.7"
+		message = "CRByte: a String contains a CR byte (spec § 5.9.0 / § 5.9.7)"
+	case "BothFormsRequired":
+		spec = "§5.9.7"
+		message = "BothFormsRequired: the multi-line String needs both forms, a segment trimming to '))' and a segment trimming to ')' (spec § 5.9.7)"
+	case "TrailingWhitespaceCollision":
+		spec = "§5.9.7"
+		message = "TrailingWhitespaceCollision: a segment trims to '))' and some content line has trailing whitespace (spec § 5.9.7)"
+	case "LeadingWhitespaceCollision":
+		spec = "§5.9.7"
+		message = "LeadingWhitespaceCollision: a segment trims to '))' and every non-blank segment shares leading whitespace at the same position (spec § 5.9.7)"
 	}
 	if reason != "ScalarRoot" && len(path) > 0 {
 		quoted, _ := json.Marshal(path)
@@ -177,7 +190,7 @@ func unrepresentableError(reason string, path []string) *Error {
 		Class:       "UnrepresentableAt",
 		Reason:      reason,
 		Path:        append([]string{}, path...),
-		SpecSection: "§5.9.0",
+		SpecSection: spec,
 	}
 }
 

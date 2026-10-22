@@ -13,6 +13,55 @@ itself — for the latter see
 
 ## Unreleased
 
+### Added
+
+- A full pure-Go backend: parser and generator implemented natively in
+  Go, usable as a complete alternative to the Rust-backed path for
+  every public operation (`Loads`, `LoadsStrict`, `LoadsInto`, `Dumps`,
+  `DumpsForceStrings`, `EmitCanonical`, `FormatSource`,
+  `CanonicalFromSource`). Select it explicitly with `ktav.UsePure()`
+  or `ktav.UseBackend(ktav.BackendPure)`; `UseNative` selects the
+  purego `ktav_cabi` path, which remains the default. There is no
+  automatic fallback in either direction.
+- Pure mode loads no shared library, downloads nothing and spawns no
+  subprocess, so it works in environments where no `ktav_cabi`
+  artifact is available.
+- Per-instance backend binding: `ktav.New(ktav.Backend)` returns an
+  `Operations` value whose `Loads`, `LoadsStrict`, `LoadsInto`, `Dumps`,
+  `DumpsForceStrings`, `EmitCanonical`, `FormatSource` and
+  `CanonicalFromSource` methods are bound to that backend and never
+  touch the process-global default — safe for concurrent use. The
+  package-level functions keep the global-default (native) behaviour.
+- The native backend and the bundled Rust crate are upgraded to
+  `ktav 0.8.1` (spec 0.8.1).
+- The native loader now verifies the loaded `ktav_cabi` artifact: after
+  loading it calls `ktav_version` and fails with
+  "ktav_cabi version X does not match expected 0.8.1" on any mismatch —
+  including a `$KTAV_LIB_PATH` override pointing at an out-of-sync
+  build (overrides still resolve, they are just verified like any other
+  artifact).
+- Known limits of pure mode: decoded values keep the existing
+  `map[string]any` contract (key order of decoded maps is not
+  represented); `EmitCanonical` on plain Go maps keeps the documented
+  alphabetical key order while `CanonicalFromSource` and
+  `FormatSource` preserve source insertion order; inline compound
+  nesting is capped at 128 levels (§5.8.4, implementation-defined,
+  mirroring the reference).
+
+
+### Fixed
+
+- `FormatSource` keeps a whole-line comment that precedes a dotted-key
+  pair (`## c` before `a.b: 1`): the comment now attaches to the
+  terminal pair of the expanded path instead of being dropped, and
+  formatting remains a fixed point.
+- Depth safety in pure mode: dotted-key nesting (§5.3.2) is unbounded
+  by the spec, so the pure canonical/pretty writer, the formatter, the
+  tagged-JSON encoder/decoder and the trivia walk are all iterative
+  (explicit work stacks). Deep documents parse, canonicalise and
+  format without recursion-depth failures, and no artificial depth
+  limit is imposed on ordinary spec inputs.
+
 ## 0.8.0 — 2026-09-27
 
 This release updates the Go binding from its `ktav 0.7.1` / spec 0.7.0
