@@ -10,43 +10,14 @@ MINOR 递进视为破坏性变更。
 本 changelog 跟踪**绑定发布**,不涉及 Ktav 格式本身的变更 —— 后者见
 [`ktav-lang/spec`](https://github.com/ktav-lang/spec/blob/main/CHANGELOG.md).
 
-## 未发布
-
-### 新增
-
-- 完整的 pure-Go 后端：解析器和生成器以 Go 原生实现，可作为基于
-  Rust 路径的完整替代，覆盖所有公开操作（`Loads`、`LoadsStrict`、
-  `LoadsInto`、`Dumps`、`DumpsForceStrings`、`EmitCanonical`、
-  `FormatSource`、`CanonicalFromSource`）。通过 `ktav.UsePure()` 或
-  `ktav.UseBackend(ktav.BackendPure)` 显式选择；`UseNative` 选择
-  purego `ktav_cabi` 路径，它仍是默认值。两个方向都没有自动回退。
-- Pure 模式不加载共享库、不下载任何内容、不启动子进程，因此在
-  没有 `ktav_cabi` 制品的环境中也可用。
-- 按实例绑定后端：`ktav.New(ktav.Backend)` 返回一个 `Operations` 值，
-  其 `Loads`、`LoadsStrict`、`LoadsInto`、`Dumps`、`DumpsForceStrings`、
-  `EmitCanonical`、`FormatSource` 与 `CanonicalFromSource` 方法均绑定
-  到该后端，不触碰进程级全局默认值——可安全并发使用。包级函数保留
-  全局默认（原生）行为。
-- 原生后端与内置 Rust crate 升级至 `ktav 0.8.1`（spec 0.8.1）。
-- 原生加载器现在会校验已加载的 `ktav_cabi` 制品：加载后调用
-  `ktav_version`，任何不匹配都会以 "ktav_cabi version X does not match
-  expected 0.8.1" 失败——包括 `$KTAV_LIB_PATH` 指向版本不一致构建的
-  情况（覆盖路径仍然可用，只是与其他制品一样接受校验）。
-- Pure 模式的已知限制：解码值保持现有 `map[string]any` 契约（解码
-  映射的键顺序无法表示）；对普通 Go 映射，`EmitCanonical` 保持
-  文档规定的字母序，而 `CanonicalFromSource` 与 `FormatSource` 保留
-  插入顺序；内联复合结构嵌套上限为 128 层（§5.8.4，实现定义，与
-  参考实现一致）。
 
 ### 修复
 
-- `FormatSource` 现在会保留位于点号键对之前的整行注释（`a.b: 1` 之前
-  的 `## c`）：注释会附加到展开路径的末端键对上，而不再丢失，且格式
-  化仍是不动点。
-- Pure 模式的深度安全：点号键嵌套（§5.3.2）不受规范限制，因此 pure
-  模式的规范/美观写入器、格式化器、tagged-JSON 编解码器与 trivia 遍历
-  全部为迭代实现（显式工作栈）。深层文档可以解析、规范化与格式化而
-  不会栈溢出，也不会对普通规范输入施加人为深度限制。
+- `FormatSource` 现在会保留位于点号键对之前的整行注释（`a.b: 1` 之前的 `## c`）：注释会附加到展开路径的末端键对上，而不再丢失，且格式化仍是不动点。
+- Pure 模式的深度安全：点号键嵌套（§5.3.2）不受规范限制，因此 pure 模式的规范/美观写入器、格式化器、tagged-JSON 编解码器与 trivia 遍历全部为迭代实现（显式工作栈）。深层文档可以解析、规范化与格式化而不会栈溢出，也不会对普通规范输入施加人为深度限制。
+- 循环引用的 Go 值（映射或切片在活跃路径上包含自身）现在会被 `Dumps`/`DumpsForceStrings`/`EmitCanonical` 以 `Message` 类结构化错误拒绝，而非递归失控；兄弟分支间共享的子映射（DAG 引用）仍可编码。Go 侧公共桥转换（`decodeJSON`、`toTagged`、`prepareWriterValue`、去标签展平）均为迭代实现。
+- 循环检测现在对多容器循环也正确：显式的 ENTER/EXIT 活跃路径方案在首次重访即拒绝 a→b→a 循环（切片身份包含长度与容量）；`Loads`/`LoadsStrict`/`LoadsInto` 拒绝顶层线格式值之后的尾随数据并接受空字符串 JSON 键；`::` 原始标记判定恢复了 §5.2 的关键字/捷径守卫（Go 字符串 `"null"`、`"true"`、`"false"`、`"("`、`"(("`、`"()"`、`"(())"` 重解析为同一字符串，Bool 的强制字符串也重解析为 String）。
+- 写入器转换的复杂度如实为 O(输入 + 输出)：`prepareWriterValue` 只维护一个共享路径缓冲（仅在冷错误路径上快照），错误路径报告精确的嵌套键；扫描探针字节计数在分类扫描内部执行，以对主体的一次遍历为界——记录在案的成本，而非宣称的零。
 
 ## 0.8.0 — 2026-09-27
 

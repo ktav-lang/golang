@@ -322,7 +322,7 @@ ops.Loads(src) // 以及 LoadsStrict、LoadsInto、Dumps、
 Pure 模式的限制：解码值保持文档规定的 `map[string]any` 契约（解码键
 顺序无法表示）；对普通 Go 映射，`EmitCanonical` 保持文档规定的字母
 序，而 `CanonicalFromSource` 与 `FormatSource` 保留插入顺序；内联复合
-结构嵌套上限为 128 层（§5.8.4，实现定义，与参考实现一致）。点号键嵌套（§5.3.2）不设上限：pure 写入器、tagged-JSON 桥与 trivia 遍历均为迭代实现（显式工作栈），深层文档不会导致栈溢出。
+结构嵌套上限为 128 层（§5.8.4，实现定义，与参考实现一致）。点号键嵌套（§5.3.2）不设上限：pure 写入器、trivia 遍历、tagged-JSON 编解码器以及 Go 侧公共桥转换（`decodeJSON`、`toTagged`、`prepareWriterValue`、去标签展平）均为迭代实现（显式工作栈），深层文档与深层程序构造的值不会导致栈溢出。循环引用的 Go 值（映射或切片在活跃路径上包含自身）会被 `Dumps`/`DumpsForceStrings`/`EmitCanonical` 以结构化错误拒绝（`Class: "Message"`，"ktav: cyclic Go value cannot be encoded"）；兄弟分支间共享的子映射（DAG 而非循环）仍可正常工作。经 `encoding/json` 回退的值（任意结构体）依赖该包自身的嵌套上限——超限时返回错误而非崩溃；本包不扩展也不验证该回退路径的深度。循环检测基于活跃路径：显式的 ENTER/EXIT 工作栈方案在容器整个子树转换完成前保持其活跃标记，因此 a→b→a 循环在首次重访即被拒绝，而已退出的共享 DAG 节点会再次转换；切片身份由（指针、长度、容量）决定，同一底层数组的不同视图不会被混淆。`Loads`/`LoadsStrict`/`LoadsInto` 拒绝顶层线格式值之后的尾随数据（第二个顶层 JSON 值是错误而非静默覆盖），且 JSON 键 `""` 是合法键。扫描探针插桩（生产环境中为 nil 钩子）在每个粗粒度事件上付出一次 nil 判断，并在字符串分类扫描内部付出逐字节计数——以对被扫描主体的一次遍历为界；这是如实记录的成本，而非宣称免费。
 
 ## 运行时支持
 

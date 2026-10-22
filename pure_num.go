@@ -180,28 +180,42 @@ func finishInt(val uint64, negative bool) (int64, bool) {
 // isFloatLiteral checks the § 3.6 float grammar syntactically:
 // sign? dec_part "." dec_part exponent?  |  sign? dec_part exponent.
 func isFloatLiteral(s string) bool {
+	examined := 0
+	return isFloatLiteralN(s, &examined)
+}
+
+// isFloatLiteralN is isFloatLiteral with a byte-examiner accumulator
+// (probe instrumentation; see needsRawMarkerContent).
+func isFloatLiteralN(s string, examined *int) bool {
 	b := []byte(s)
 	i := 0
 	if i < len(b) && (b[i] == '+' || b[i] == '-') {
 		i++
+		*examined++
 	}
 	n, ok := scanDecPart(b, i)
 	if !ok {
+		*examined += i
 		return false
 	}
+	*examined += n - i
 	i = n
 	if i < len(b) && b[i] == '.' {
 		i++
 		n, ok := scanDecPart(b, i)
 		if !ok {
+			*examined += i
 			return false
 		}
+		*examined += n - i
 		i = n
 		if i < len(b) && (b[i] == 'e' || b[i] == 'E') {
 			n, ok := scanExponent(b, i)
 			if !ok {
+				*examined += i
 				return false
 			}
+			*examined += n - i
 			i = n
 		}
 		return i == len(b)
@@ -209,11 +223,14 @@ func isFloatLiteral(s string) bool {
 	if i < len(b) && (b[i] == 'e' || b[i] == 'E') {
 		n, ok := scanExponent(b, i)
 		if !ok {
+			*examined += i
 			return false
 		}
+		*examined += n - i
 		i = n
 		return i == len(b)
 	}
+	*examined += i
 	return false
 }
 

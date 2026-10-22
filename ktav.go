@@ -213,7 +213,9 @@ func FormatSource(src string) (string, error) { return formatSourceVia(activeBac
 // in canonical form (spec § 5.9), preserving the source's insertion
 // order of object keys. This is equivalent to `ktav parse | ktav
 // emit-canonical` on the command line.
-func CanonicalFromSource(src string) (string, error) { return canonicalFromSourceVia(activeBackend(), src) }
+func CanonicalFromSource(src string) (string, error) {
+	return canonicalFromSourceVia(activeBackend(), src)
+}
 
 // ─── per-instance operations (no global state) ───────────────────────
 

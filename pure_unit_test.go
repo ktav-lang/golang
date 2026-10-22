@@ -53,7 +53,12 @@ func TestPureNegativeControls(t *testing.T) {
 		class  string
 		reason string
 	}{
-		{"unterminated_quoted_key", `"open: 1` + "\n", "UnterminatedQuotedKey", ""},
+		// §5.0.1 rule 6 phase 2 + §5.1 rule 8: UnterminatedQuotedKey needs an
+		// ESTABLISHED Object root — at the root level this line is not a pair
+		// candidate (the quote-aware separator scan keeps the separator hidden
+		// inside the unterminated quoted segment), so it falls to rule 7; the
+		// vector is anchored with a first pair.
+		{"unterminated_quoted_key", "anchor: ok\n\"open: 1\n", "UnterminatedQuotedKey", ""},
 		// §5.0.1 rule 7: a bare non-pair first line makes the root an
 		// implicit ARRAY, so the MissingSeparator class needs OBJECT
 		// context — the second line is the bare one.
@@ -62,8 +67,14 @@ func TestPureNegativeControls(t *testing.T) {
 		// item, NOT a MissingSeparator error (positive control).
 		// {"implicit_array_bare_root", "just some text\n", ...} — covered
 		// by TestPureImplicitArrayBareRoot below.
-		{"empty_key", ": value\n", "EmptyKey", ""},
-		{"missing_separator_space", "a:1\n", "MissingSeparatorSpace", ""},
+		// §5.0.1 rule 6 needs a non-empty raw prefix, so at the ROOT this line
+		// is not a pair candidate (rule 7); inside an established Object the
+		// empty prefix surfaces as EmptyKey (§6.5) — the vector is anchored.
+		{"empty_key", "anchor: ok\n: value\n", "EmptyKey", ""},
+		// §6.10: a glued plain `:` line is MissingSeparatorSpace inside an
+		// established Object; at the ROOT it is not a pair candidate (§5.0.1
+		// rule 6 <sep-end>) and falls to rule 7 — see TestPureRootGluedNotAPair.
+		{"missing_separator_space", "anchor: ok\na:1\n", "MissingSeparatorSpace", ""},
 		{"invalid_key", "a(b: 1\n", "InvalidKey", ""},
 		{"duplicate_key", "a: 1\na: 2\n", "DuplicateKey", ""},
 		{"dotted_conflict_leaf_first", "a: 1\na.b: 2\n", "KeyPathConflict", ""},
@@ -96,6 +107,31 @@ func TestPureNegativeControls(t *testing.T) {
 			}
 			if e.Line < 1 {
 				t.Fatalf("expected 1-based line, got %d", e.Line)
+			}
+		})
+	}
+}
+
+// TestPureRootGluedNotAPair pins §5.0.1 rule 6/7 at the ROOT level: a
+// glued plain `:` line (no <sep-end> whitespace), a line with an empty
+// raw key prefix, and a line whose only separator hides inside an
+// unterminated quoted segment are NOT pair candidates — the root is an
+// implicit Array of bare-scalar items (rule 7), NOT an error.
+func TestPureRootGluedNotAPair(t *testing.T) {
+	ops := pureOps(t)
+	for _, tt := range []struct{ name, src string }{
+		{"glued_colon", "a:1\n"},
+		{"empty_key_prefix", ": value\n"},
+		{"separator_inside_unterminated_quote", `"open: 1` + "\n"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			v, err := ops.Loads(tt.src)
+			if err != nil {
+				t.Fatalf("Loads(%q): %v (§5.0.1 rule 7: implicit Array root, no error)", tt.src, err)
+			}
+			arr, ok := v.([]any)
+			if !ok || len(arr) != 1 {
+				t.Fatalf("Loads(%q) = %#v, want one-item implicit Array (§5.0.1 rule 7)", tt.src, v)
 			}
 		})
 	}
@@ -166,7 +202,7 @@ func TestPureBOMPlacement(t *testing.T) {
 	ops := pureOps(t)
 
 	// Leading BOM is consumed; the key is decoded without it.
-	v, err := ops.Loads("﻿a: 1\n")
+	v, err := ops.Loads("\uFEFFa: 1\n")
 	if err != nil {
 		t.Fatalf("leading BOM rejected: %v", err)
 	}
@@ -634,6 +670,17 @@ func TestPureUnicodeEmission(t *testing.T) {
 			if err != nil || again != got {
 				t.Fatalf("not a fixed point: %q, %v", again, err)
 			}
+			// The FORMATTER must handle every vector too: FormatSource
+			// on the canonical bytes reproduces them (comment/Unicode
+			// preservation through the trivia writer, same LIFO
+			// closer/trivia contract as F2).
+			formatted, err := ops.FormatSource(got)
+			if err != nil {
+				t.Fatalf("FormatSource(%q): %v", got, err)
+			}
+			if formatted != got {
+				t.Fatalf("FormatSource(canonical)\nwant: %q\ngot:  %q", got, formatted)
+			}
 		})
 	}
 }
@@ -687,5 +734,76 @@ func TestPureNeverLoadsNativeLibrary(t *testing.T) {
 	}
 	if native.Loaded() {
 		t.Fatal("native library was loaded during a pure-forced test run")
+	}
+}
+
+// TestPureWriterCloserOrderShapes pins the LIFO closer contract of the
+// iterative writer through PUBLIC ops (CanonicalFromSource): every
+// opener matches its closer exactly once, children render between the
+// opener and the closer, and path bookkeeping keeps insertion order
+// across dotted reopen. Each oracle is hand-traced from §5.9.2–§5.9.6
+// (pairs and items at indent+1 = 4 spaces; §5.9.3 root-array wrap when
+// the first item is a compound or empty compound), never from the
+// implementation. Each case is also a fixed point.
+func TestPureWriterCloserOrderShapes(t *testing.T) {
+	ops := pureOps(t)
+	tests := []struct{ name, src, want string }{
+		// `a.b: 1` opens one nested object: leaf line at indent 1,
+		// then ONE closer at indent 0 (§5.9.4).
+		{"dotted_single", "a.b: 1\n", "a: {\n    b: 1\n}\n"},
+		// Nested inline arrays keep one level per opener (§5.9.4/§5.9.6).
+		{"nested_inline_arrays", "k: [[1], [2, 3]]\n",
+			"k: [\n" +
+				"    [\n" +
+				"        1\n" +
+				"    ]\n" +
+				"    [\n" +
+				"        2\n" +
+				"        3\n" +
+				"    ]\n" +
+				"]\n"},
+		// Root array whose first item is an empty compound: §5.9.3 wrap
+		// (already wrapped in the source, so a fixed point).
+		{"root_array_wrapped", "[\n    {}\n    2\n]\n",
+			"[\n    {}\n    2\n]\n"},
+		// Alternating scalar / object / array items (§5.9.6 branches).
+		{"alternating_items", "x: [1, {a: 2}, [3]]\n",
+			"x: [\n" +
+				"    1\n" +
+				"    {\n" +
+				"        a: 2\n" +
+				"    }\n" +
+				"    [\n" +
+				"        3\n" +
+				"    ]\n" +
+				"]\n"},
+		// Dotted reopen: the reopened prefix `d` emits its accumulated
+		// pairs in insertion order (e-block closed before g), §5.3.2.
+		{"dotted_reopen", "d.e.f: 1\nd.g: 2\n",
+			"d: {\n" +
+				"    e: {\n" +
+				"        f: 1\n" +
+				"    }\n" +
+				"    g: 2\n" +
+				"}\n"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := ops.CanonicalFromSource(tt.src)
+			if err != nil {
+				t.Fatalf("CanonicalFromSource(%q): %v", tt.src, err)
+			}
+			if got != tt.want {
+				t.Fatalf("canonical(%q)\nwant: %q\ngot:  %q", tt.src, tt.want, got)
+			}
+			// Fixed point through the formatter as well.
+			fmt, err := ops.FormatSource(tt.want)
+			if err != nil {
+				t.Fatalf("FormatSource(%q): %v", tt.want, err)
+			}
+			if fmt != tt.want {
+				t.Fatalf("FormatSource not identity on canonical bytes\nwant: %q\ngot:  %q", tt.want, fmt)
+			}
+		})
 	}
 }

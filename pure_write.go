@@ -1,356 +1,7 @@
 package ktav
 
-// The pure writers: § 5.9.10 key emission, § 5.9.7 string-form
-// selection, the § 5.9 canonical/pretty writers and the trivia
-// formatter — all ITERATIVE (explicit work stacks). Output is
-// assembled in a local buffer first, so a rejection never emits
-// partial output (§ 5.9.0).
+import "strings"
 
-import (
-	"strconv"
-	"strings"
-	"unicode/utf8"
-)
-
-const indentUnit = "    "
-
-func pushIndent(b *strings.Builder, level int) {
-	for i := 0; i < level; i++ {
-		b.WriteString(indentUnit)
-	}
-}
-
-// lastRune returns the final rune of s ("" for empty). Decoding goes
-// through unicode/utf8: the width of the last rune is determined from
-// its LEAD byte, never from the last byte (a continuation byte would
-// mis-size the rune — the é panic this replaced).
-func lastRune(s string) (rune, bool) {
-	if s == "" {
-		return 0, false
-	}
-	r, _ := utf8.DecodeLastRuneInString(s)
-	return r, true
-}
-
-// ─── § 5.9.7 string-form selection ────────────────────────────────────
-
-// stringNeedsMultiline: LF/CR/control bytes or § 3.3 edge whitespace
-// route a body to a multi-line form (§ 5.9.7).
-func stringNeedsMultiline(s string) bool {
-	if s == "" {
-		return false
-	}
-	r, _ := utf8.DecodeRuneInString(s)
-	if isKtavWhitespaceR(r) {
-		return true
-	}
-	if r2, ok := lastRune(s); ok && isKtavWhitespaceR(r2) {
-		return true
-	}
-	for i := 0; i < len(s); i++ {
-		if s[i] < 0x20 && s[i] != '\t' {
-			return true
-		}
-	}
-	return false
-}
-
-// chooseMultilineForm picks the multi-line string form that reproduces
-// s byte-for-byte on re-parse, or the § 5.9.0 reason code when neither
-// form can. preferStripped keeps the pretty writers' readable default.
-func chooseMultilineForm(s string, preferStripped bool) (stripped bool, reason string) {
-	soleSingle, soleDouble := false, false
-	wsOnlyLine, indentedLine, trailingWSLine := false, false, false
-	for _, line := range splitLF(s) {
-		trimmed := trimInline(line)
-		switch trimmed {
-		case ")":
-			soleSingle = true
-		case "))":
-			soleDouble = true
-		}
-		if line == "" {
-			continue
-		}
-		if trimmed == "" {
-			wsOnlyLine = true
-		} else if inlineWSAt(line, 0) > 0 {
-			indentedLine = true
-		}
-		if trimTrailingInline(line) != line {
-			trailingWSLine = true
-		}
-	}
-	strippedSafe := !soleSingle && !wsOnlyLine && !indentedLine && !trailingWSLine
-	verbatimOK := !soleDouble
-	if preferStripped && strippedSafe {
-		return true, ""
-	}
-	if verbatimOK {
-		return false, ""
-	}
-	hasCommonIndent := commonLeadingWSPrefix(splitLF(s)) != 0
-	strippedLossless := !soleSingle && !wsOnlyLine && !hasCommonIndent && !trailingWSLine
-	if strippedLossless {
-		return true, ""
-	}
-	switch {
-	case soleSingle:
-		return false, "BothFormsRequired"
-	case trailingWSLine:
-		return false, "TrailingWhitespaceCollision"
-	default:
-		return false, "LeadingWhitespaceCollision"
-	}
-}
-
-func splitLF(s string) []string {
-	out := []string{}
-	start := 0
-	for i := 0; i < len(s); i++ {
-		if s[i] == '\n' {
-			out = append(out, s[start:i])
-			start = i + 1
-		}
-	}
-	return append(out, s[start:])
-}
-
-// needsRawMarker: would § 5.2 re-classify this one-line body as
-// something other than a String?
-func needsRawMarker(s string) bool {
-	if s == "" {
-		return false
-	}
-	probe("rawmarker_scan", len(s))
-	if inlineWSAt(s, 0) > 0 {
-		t := trimLeadingInline(s)
-		return t != "" && (t[0] == '{' || t[0] == '[' || needsRawMarkerContent(t))
-	}
-	if s[0] == '{' || s[0] == '[' {
-		return true
-	}
-	return needsRawMarkerContent(s)
-}
-
-func needsRawMarkerContent(s string) bool {
-	probe("numeric_scan", 1)
-	switch s {
-	case "null", "true", "false", "(", "((", "()", "(())":
-		return true
-	}
-	return matchesIntegerGrammar(s) || isFloatLiteral(s)
-}
-
-// matchesIntegerGrammar is the § 3.6 integer grammar syntactically
-// (value may overflow i64; lowercase base prefixes only).
-func matchesIntegerGrammar(s string) bool {
-	b := []byte(s)
-	i := 0
-	if i < len(b) && (b[i] == '+' || b[i] == '-') {
-		i++
-	}
-	if i >= len(b) {
-		return false
-	}
-	if b[i] == '0' && i+1 < len(b) {
-		switch b[i+1] {
-		case 'x':
-			return checkPrefixedDigits(b[i+2:], 16)
-		case 'o':
-			return checkPrefixedDigits(b[i+2:], 8)
-		case 'b':
-			return checkPrefixedDigits(b[i+2:], 2)
-		}
-	}
-	return checkDecimalDigits(b[i:])
-}
-
-func checkPrefixedDigits(digits []byte, radix int) bool {
-	if len(digits) == 0 || !isDigitForRadix(digits[0], radix) {
-		return false
-	}
-	prevUnderscore := false
-	for _, c := range digits[1:] {
-		if c == '_' {
-			if prevUnderscore {
-				return false
-			}
-			prevUnderscore = true
-			continue
-		}
-		prevUnderscore = false
-		if !isDigitForRadix(c, radix) {
-			return false
-		}
-	}
-	return !prevUnderscore
-}
-
-func checkDecimalDigits(digits []byte) bool {
-	if len(digits) == 0 || digits[0] < '0' || digits[0] > '9' {
-		return false
-	}
-	prevUnderscore := false
-	for _, c := range digits[1:] {
-		if c == '_' {
-			if prevUnderscore {
-				return false
-			}
-			prevUnderscore = true
-			continue
-		}
-		prevUnderscore = false
-		if c < '0' || c > '9' {
-			return false
-		}
-	}
-	return !prevUnderscore
-}
-
-// itemNeedsRawMarker: the item-position collisions a bare array-item
-// line has on top of the pair-value ones.
-func itemNeedsRawMarker(s string) bool {
-	return needsRawMarker(s) || strings.HasPrefix(s, "##") || strings.HasPrefix(s, "::") ||
-		s == "]" || s == "}"
-}
-
-// ─── § 5.9.10 key emission ────────────────────────────────────────────
-
-func pushUnicodeEscape(b *strings.Builder, r rune) {
-	const hex = "0123456789ABCDEF"
-	cp := uint32(r)
-	if cp > 0xFFFF {
-		b.WriteString("\\u")
-		for shift := 28; shift >= 0; shift -= 4 {
-			b.WriteByte(hex[(cp>>uint(shift))&0xF])
-		}
-		return
-	}
-	b.WriteString("\\u")
-	for _, shift := range [4]uint{12, 8, 4, 0} {
-		b.WriteByte(hex[(cp>>shift)&0xF])
-	}
-}
-
-// pushEscapedKeySegment emits a key segment in bare or quoted form per
-// § 5.9.10; rootFirstKey enables the § 5.9.12 rule (c) U+FEFF guard.
-func pushEscapedKeySegment(key string, rootFirstKey bool, b *strings.Builder) {
-	first := rune(-1)
-	if key != "" {
-		first, _ = utf8.DecodeRuneInString(key)
-	}
-	if first == '"' || first == '\'' || first == '`' ||
-		(rootFirstKey && first == 0xFEFF) ||
-		strings.HasPrefix(key, "##") {
-		pushQuotedKey(key, b)
-		return
-	}
-	if key != "" {
-		// (a) edge § 3.3 whitespace other than LF/CR: quoting buys the
-		// no-trim guarantee (quoted content is never trimmed).
-		if isInlineWhitespaceR(first) {
-			pushQuotedKey(key, b)
-			return
-		}
-		if lastr, ok := lastRune(key); ok && isInlineWhitespaceR(lastr) {
-			pushQuotedKey(key, b)
-			return
-		}
-	}
-	needsRewrite := false
-	for i := 0; i < len(key); i++ {
-		c := key[i]
-		switch c {
-		case '.', ':', ',', '{', '}', '[', ']', '(', ')':
-			pushQuotedKey(key, b)
-			return
-		case '\\', '\n', '\r', 0x7F:
-			needsRewrite = true
-		default:
-			if c < 0x20 && !inlineWSByte(c) {
-				needsRewrite = true
-			}
-		}
-	}
-	if needsRewrite {
-		pushBareKeyEscaped(key, b)
-	} else {
-		b.WriteString(key)
-	}
-}
-
-func pushBareKeyEscaped(key string, b *strings.Builder) {
-	// The last rune's start comes from its own width (lead-byte
-	// derived, via utf8) — never from the final byte.
-	_, lastSize := utf8.DecodeLastRuneInString(key)
-	lastIdx := len(key) - lastSize
-	for i := 0; i < len(key); {
-		r, size := utf8.DecodeRuneInString(key[i:])
-		atEdge := i == 0 || i == lastIdx
-		switch {
-		case r == '\\':
-			b.WriteString("\\\\")
-		case r == '\n':
-			b.WriteString("\\n")
-		case r == '\r':
-			b.WriteString("\\r")
-		case isKtavWhitespaceR(r):
-			if atEdge {
-				pushUnicodeEscape(b, r)
-			} else {
-				b.WriteRune(r)
-			}
-		case r == '.':
-			b.WriteString("\\.")
-		case r == ':':
-			b.WriteString("\\:")
-		case r == ',':
-			b.WriteString("\\,")
-		case r == '{':
-			b.WriteString("\\{")
-		case r == '}':
-			b.WriteString("\\}")
-		case r == '[':
-			b.WriteString("\\[")
-		case r == ']':
-			b.WriteString("\\]")
-		case r < 0x20 || r == 0x7F:
-			pushUnicodeEscape(b, r)
-		default:
-			b.WriteRune(r)
-		}
-		i += size
-	}
-}
-
-func pushQuotedKey(key string, b *strings.Builder) {
-	b.WriteByte('"')
-	for i := 0; i < len(key); {
-		r, size := utf8.DecodeRuneInString(key[i:])
-		switch {
-		case r == '"':
-			b.WriteString("\\\"")
-		case r == '\\':
-			b.WriteString("\\\\")
-		case r == '\n':
-			b.WriteString("\\n")
-		case r == '\r':
-			b.WriteString("\\r")
-		case (r < 0x20 && r != '\t' && r != 0x0B && r != 0x0C) || r == 0x7F:
-			pushUnicodeEscape(b, r)
-		default:
-			b.WriteRune(r)
-		}
-		i += size
-	}
-	b.WriteByte('"')
-}
-
-// ─── shared string emission primitives ────────────────────────────────
-
-// emitStringBody renders a one-line string body with the pair
-// separator; returns a § 5.9.0/§ 5.9.7 reason on rejection.
 func emitStringInPairTo(b *strings.Builder, s string, indent int, preferStripped bool) string {
 	if strings.IndexByte(s, '\r') >= 0 {
 		return "CRByte"
@@ -500,8 +151,8 @@ func (w *writer) renderRoot(v *pvalue) *Error {
 	case v.arr[0].kind == kObj || v.arr[0].kind == kArr:
 		// § 5.9.3: first item is a compound — wrap the root array.
 		w.b.WriteString("[\n")
+		push(wtask{closer: "]\n"}) // pushed FIRST so children pop before it
 		expandArr(v.arr, 1, false)
-		push(wtask{closer: "]\n"})
 	default:
 		expandArr(v.arr, 0, true)
 	}
@@ -554,16 +205,16 @@ func (w *writer) renderRoot(v *pvalue) *Error {
 					w.b.WriteString("[]\n")
 				} else {
 					w.b.WriteString("[\n")
-					expandArr(t.v.arr, t.indent+1, false)
 					push(wtask{closer: "]\n", indent: t.indent})
+					expandArr(t.v.arr, t.indent+1, false)
 				}
 			case kObj:
 				if len(t.v.obj.entries) == 0 {
 					w.b.WriteString("{}\n")
 				} else {
 					w.b.WriteString("{\n")
-					expandObj(t.v.obj, t.indent+1, false)
 					push(wtask{closer: "}\n", indent: t.indent})
+					expandObj(t.v.obj, t.indent+1, false)
 				}
 			}
 			continue
@@ -615,16 +266,16 @@ func (w *writer) renderRoot(v *pvalue) *Error {
 				w.b.WriteString(": []\n")
 			} else {
 				w.b.WriteString(": [\n")
-				expandArr(v.arr, t.indent+1, false)
 				push(wtask{closer: "]\n", indent: t.indent})
+				expandArr(v.arr, t.indent+1, false)
 			}
 		case kObj:
 			if len(v.obj.entries) == 0 {
 				w.b.WriteString(": {}\n")
 			} else {
 				w.b.WriteString(": {\n")
-				expandObj(v.obj, t.indent+1, false)
 				push(wtask{closer: "}\n", indent: t.indent})
+				expandObj(v.obj, t.indent+1, false)
 			}
 		}
 	}
@@ -700,10 +351,10 @@ func (fw *fmtWriter) emitDoc(root *fvalue, leading []tline) *Error {
 	// nesting (§ 5.3.2, uncapped) can never overflow the stack. Trivia
 	// slots ride on the tasks so attachment points are unchanged.
 	const (
-		ftPair = iota // key+f: emit slot trivia, key line, value
-		ftItem        // f: emit item trivia, item line
-		ftCloser      // closer line, preceded by pre-trivia at indent+1
-		ftTrivia      // bare trivia run
+		ftPair   = iota // key+f: emit slot trivia, key line, value
+		ftItem          // f: emit item trivia, item line
+		ftCloser        // closer line, preceded by pre-trivia at indent+1
+		ftTrivia        // bare trivia run
 	)
 	type fmtask struct {
 		kind         int
@@ -737,10 +388,11 @@ func (fw *fmtWriter) emitDoc(root *fvalue, leading []tline) *Error {
 
 	switch root.v.kind {
 	case kObj:
-		expandObj(root, 0, true)
 		// Trailing whole-line trivia after the root object's last pair
 		// must survive; otherwise FormatSource is not a fixed point.
+		// Pushed FIRST so it sits at the stack bottom and emits LAST.
 		push(fmtask{kind: ftTrivia, trivia: root.comp.trailing})
+		expandObj(root, 0, true)
 	case kArr:
 		if len(root.comp.items) == 0 {
 			if len(root.comp.trailing) == 0 {
@@ -759,15 +411,15 @@ func (fw *fmtWriter) emitDoc(root *fvalue, leading []tline) *Error {
 		}
 		if root.comp.items[0].val.v.kind == kObj || root.comp.items[0].val.v.kind == kArr {
 			fw.b.WriteString("[\n")
+			push(fmtask{kind: ftCloser, closer: "]\n", trivia: root.comp.trailing})
 			expandItems(root, 1)
-			push(fmtask{kind: ftCloser, closer: "]\n"})
 			break
 		}
+		push(fmtask{kind: ftTrivia, trivia: root.comp.trailing})
 		for i := len(root.comp.items) - 1; i >= 0; i-- {
 			it := root.comp.items[i]
 			push(fmtask{kind: ftItem, f: it.val, trivia: it.trivia, rootArrFirst: i == 0})
 		}
-		push(fmtask{kind: ftTrivia, trivia: root.comp.trailing})
 	default:
 		fw.fail("ScalarRoot")
 	}
@@ -827,16 +479,16 @@ func (fw *fmtWriter) emitDoc(root *fvalue, leading []tline) *Error {
 					fw.b.WriteString("[]\n")
 				} else {
 					fw.b.WriteString("[\n")
-					expandItems(f, t.indent+1)
 					push(fmtask{kind: ftCloser, closer: "]\n", indent: t.indent, trivia: f.comp.trailing})
+					expandItems(f, t.indent+1)
 				}
 			case kObj:
 				if len(f.comp.pairs) == 0 && len(f.comp.trailing) == 0 {
 					fw.b.WriteString("{}\n")
 				} else {
 					fw.b.WriteString("{\n")
-					expandObj(f, t.indent+1, false)
 					push(fmtask{kind: ftCloser, closer: "}\n", indent: t.indent, trivia: f.comp.trailing})
+					expandObj(f, t.indent+1, false)
 				}
 			}
 		case ftPair:
@@ -878,8 +530,13 @@ func (fw *fmtWriter) emitDoc(root *fvalue, leading []tline) *Error {
 				} else if stringNeedsMultiline(f.v.s) {
 					fw.fail(emitMultilineTo(&fw.b, f.v.s, indent, true, false))
 				} else {
+					// Same semantics as emitStringInPairTo: the raw
+					// marker replaces the plain separator, never
+					// supplements it (ftPair kStr branch).
 					if needsRawMarker(f.v.s) {
 						fw.b.WriteString(":: ")
+					} else {
+						fw.b.WriteString(": ")
 					}
 					fw.b.WriteString(f.v.s)
 					fw.b.WriteByte('\n')
@@ -889,16 +546,16 @@ func (fw *fmtWriter) emitDoc(root *fvalue, leading []tline) *Error {
 					fw.b.WriteString(": []\n")
 				} else {
 					fw.b.WriteString(": [\n")
-					expandItems(f, indent+1)
 					push(fmtask{kind: ftCloser, closer: "]\n", indent: indent, trivia: f.comp.trailing})
+					expandItems(f, indent+1)
 				}
 			case kObj:
 				if len(f.comp.pairs) == 0 && len(f.comp.trailing) == 0 {
 					fw.b.WriteString(": {}\n")
 				} else {
 					fw.b.WriteString(": {\n")
-					expandObj(f, indent+1, false)
 					push(fmtask{kind: ftCloser, closer: "}\n", indent: indent, trivia: f.comp.trailing})
+					expandObj(f, indent+1, false)
 				}
 			}
 		}
@@ -974,26 +631,4 @@ func attachPath(v *pvalue, reason string) *Error {
 		return unrepresentableError(found, path)
 	}
 	return unrepresentableError(reason, nil)
-}
-
-// leafFault reports a leaf-level unrepresentable reason, if any.
-func leafFault(v *pvalue) string {
-	switch v.kind {
-	case kObj, kArr:
-		return ""
-	case kFloat:
-		if f, err := strconv.ParseFloat(v.s, 64); err == nil && isNonFiniteF(f) {
-			return "NonFiniteFloat"
-		}
-	case kStr:
-		if strings.IndexByte(v.s, '\r') >= 0 {
-			return "CRByte"
-		}
-		if stringNeedsMultiline(v.s) {
-			if _, r := chooseMultilineForm(v.s, false); r != "" {
-				return r
-			}
-		}
-	}
-	return ""
 }

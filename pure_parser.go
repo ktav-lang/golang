@@ -23,7 +23,17 @@ func probe(kind string, n int) {
 		scanProbe(kind, n)
 	}
 }
-//
+
+// kvTable is the shared insertion-table interface over the two tree
+// flavours: plainTable (plain pvalue/omap) and fvalueTable (trivia
+// fvalue). Both use value receivers, so both value types satisfy it.
+type kvTable interface {
+	insertLeaf(key string, val any, trivia []tline) (any, bool)
+	descend(key string) (kvTable, bool)
+	isObj(val any) bool
+	label(val any) string
+}
+
 // A compound *fvalue doubles as the insertion table for the trivia
 // parser: pairs live in comp.pairs (insertion order) with a lazily
 // built hash index for O(1) duplicate detection and O(1) dotted-prefix

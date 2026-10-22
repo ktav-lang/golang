@@ -49,8 +49,52 @@ jobs:
         with:
           go-version: ${{ matrix.go }}
 
-      - name: Build native library
-        run: cargo build --release -p ktav-cabi
+      # Provenance: prove the RESOLVED core is the published Rust
+      # ktav 0.8.1. Order matters: resolve the lock FIRST (Cargo.lock is
+      # gitignored in this repo), VERIFY it against the published
+      # artifact, then build --locked so compilation is proven to use
+      # exactly the verified resolution. Cargo.lock is parsed with an
+      # awk state machine over [[package]] blocks (version AND checksum
+      # AND source of the ktav entry); the crates.io sparse index is
+      # JSONL (one object per line with `vers` and `cksum`) — jq selects
+      # the 0.8.1 line's cksum. All three values must agree or the job
+      # fails.
+      - name: Resolve and verify ktav core version and checksum
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo generate-lockfile
+          want_ver="0.8.1"
+          want_cksum="7140dfe2fa6c320e74768cd6a637828c2d26f81746254f4fcd805f3993bd3fd5"
+          lock_ver="$(awk -F'"' '
+            /^[[:space:]]*\[\[package\]\]/ { inktav=0 }
+            /^[[:space:]]*name = "ktav"$/ { inktav=1 }
+            inktav && /^[[:space:]]*version = / { print $2; exit }
+          ' Cargo.lock)"
+          lock_cksum="$(awk -F'"' '
+            /^[[:space:]]*\[\[package\]\]/ { inktav=0 }
+            /^[[:space:]]*name = "ktav"$/ { inktav=1 }
+            inktav && /^[[:space:]]*checksum = / { print $2; exit }
+          ' Cargo.lock)"
+          lock_src="$(awk -F'"' '
+            /^[[:space:]]*\[\[package\]\]/ { inktav=0 }
+            /^[[:space:]]*name = "ktav"$/ { inktav=1 }
+            inktav && /^[[:space:]]*source = / { print $2; exit }
+          ' Cargo.lock)"
+          echo "Cargo.lock resolves ktav ${lock_ver} cksum ${lock_cksum} src ${lock_src}"
+          test "$lock_ver" = "$want_ver" || { echo "lock version mismatch"; exit 1; }
+          test "$lock_cksum" = "$want_cksum" || { echo "lock checksum mismatch"; exit 1; }
+          case "$lock_src" in
+            registry+https://github.com/rust-lang/crates.io-index*) ;;
+            *) echo "lock source is not the crates.io registry: $lock_src"; exit 1 ;;
+          esac
+          got="$(curl -fsSL https://index.crates.io/kt/av/ktav | jq -r 'select(.vers=="0.8.1") | .cksum' | head -n1)"
+          test -n "$got" || { echo "sparse index has no ktav 0.8.1 line"; exit 1; }
+          echo "crates.io cksum = ${got}"
+          test "$got" = "$want_cksum" || { echo "checksum mismatch: ktav 0.8.1 provenance unproven"; exit 1; }
+
+      - name: Build native library (locked to the verified lockfile)
+        run: cargo build --release --locked -p ktav-cabi
 
       - name: Go tests
         run: go test -v ./...
@@ -84,7 +128,7 @@ jobs:
           go-version: "1.23"
 
       - name: Go tests (pure backend, no cabi built)
-        run: go test -v -run '^(TestPure|TestProbe|TestCorpusManifest|TestLoadCorpusManifest|TestReadFixtureSource|TestWriter|TestDumpsForceStringsPreservesNonFiniteFloatText|TestInvalidUTF8|TestLineOfOffset|TestFirstInvalidUTF8|TestReadme)' ./...
+        run: go test -v -run '^(TestPure|TestProbe|TestBridge|TestCorpusManifest|TestLoadCorpusManifest|TestReadFixtureSource|TestWriter|TestDumpsForceStringsPreservesNonFiniteFloatText|TestInvalidUTF8|TestLineOfOffset|TestFirstInvalidUTF8|TestReadme)' ./...
 
   # ------------------------------------------------------------------
   # Packaged pure consumer: a GENUINE distribution representation. The
@@ -119,10 +163,25 @@ jobs:
           set -euo pipefail
           work="$(mktemp -d "${RUNNER_TEMP:-/tmp}/ktav-consumer.XXXXXX")"
           trap 'rm -rf "$work"' EXIT
+          # The private module must NOT be resolvable from any warmed
+          # runner cache: isolate the module and build caches, and
+          # assert the native artifact is genuinely absent.
+          export GOMODCACHE="$work/gomod"
+          export GOCACHE="$work/gocache"
+          shopt -s nullglob
+          cabi=(target/release/*ktav_cabi* target/release/libktav_cabi* target/release/ktav_cabi*)
+          shopt -u nullglob
+          test "${#cabi[@]}" -eq 0 || { echo "native artifact present: ${cabi[*]}"; exit 1; }
           python3 scripts/module_proxy.py "$GITHUB_WORKSPACE" v0.8.1 "$work/proxy"
           cp internal/pureconsumer/main.go "$work/main.go"
           cd "$work"
-          export GOPROXY="file://$work/proxy"
+          # The file proxy serves ONLY github.com/ktav-lang/golang; the
+          # public deps (purego, x/sys) resolve from proxy.golang.org.
+          export GOPROXY="file://$work/proxy,https://proxy.golang.org"
+          # GOSUMDB=off: the private module's zip cannot carry a sum in
+          # sum.golang.org, and a file proxy has no signed database —
+          # disabling sum verification for this consumer proof is the
+          # accepted tradeoff (documented in scripts/module_proxy.py).
           export GOSUMDB=off
           export GOFLAGS=-mod=mod
           go mod init example.com/ktav-pure-consumer
