@@ -807,9 +807,11 @@ func (sc *scanner) run() int {
 		case (b == '}' || b == ']') && !cfg.closerLiteral:
 			if !cfg.decrementAny && b != close {
 				if cfg.trackQuotes {
-					want := byte('[')
+					// The closer's own matching opener kind (mirrors the
+					// Rust scanner: `]` pops a `[` scope, `}` a `{` one).
+					want := byte('{')
 					if b == ']' {
-						want = '{'
+						want = '['
 					}
 					if len(stack) > 0 && stack[len(stack)-1].kind == want {
 						f := stack[len(stack)-1]
@@ -832,9 +834,13 @@ func (sc *scanner) run() int {
 					sc.writeBack(i, depth, inKey, segStart, valStart, raw, prev, segAt, stack, segments, pairs)
 					return stopCloser
 				}
-				want := byte('[')
+				// Nested closer: pop only when it matches the most
+				// recently opened compound kind — the closer's own
+				// matching opener (`]`↔`[`, `}`↔`{`), so crossed closers
+				// don't corrupt tracking (R4-F2).
+				want := byte('{')
 				if b == ']' {
-					want = '{'
+					want = '['
 				}
 				if len(stack) > 0 && stack[len(stack)-1].kind == want {
 					f := stack[len(stack)-1]

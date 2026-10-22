@@ -178,6 +178,51 @@ func TestBridgeDistinctEmptySlicesEncode(t *testing.T) {
 	}
 }
 
+// TestBridgeOverlappingSliceViewsEncode: two OVERLAPPING windows of
+// ONE backing array have different (len, cap) AND different data, yet
+// the SAME base pointer — pointer-only identity would conflate them.
+// The (kind, ptr, len, cap) identity key must encode each window
+// independently, and both must round-trip to their exact window
+// values (structEqual against hand-derived expectations, not
+// substring probes). The cycles this must NOT relax stay covered by
+// TestBridgeTwoContainerCycleRejected (map and slice flavours).
+func TestBridgeOverlappingSliceViewsEncode(t *testing.T) {
+	ops := bridgeOps(t)
+	shared := map[string]any{"deep": []any{"leaf"}}
+	back := []any{
+		map[string]any{"n": int64(1), "sub": shared},
+		map[string]any{"n": int64(2), "sub": shared},
+		map[string]any{"n": int64(3)},
+	}
+	v1 := back[0:2]
+	v2 := back[1:3]
+	if structEqual(v1[0], v2[0]) {
+		t.Fatal("test bug: windows must hold different data")
+	}
+	m := map[string]any{"v1": v1, "v2": v2}
+	out, err := ops.EmitCanonical(m)
+	if err != nil {
+		t.Fatalf("EmitCanonical(overlapping views): %v", err)
+	}
+	got, err := ops.Loads(out)
+	if err != nil {
+		t.Fatalf("Loads(%q): %v", out, err)
+	}
+	want := map[string]any{
+		"v1": []any{
+			map[string]any{"n": int64(1), "sub": map[string]any{"deep": []any{"leaf"}}},
+			map[string]any{"n": int64(2), "sub": map[string]any{"deep": []any{"leaf"}}},
+		},
+		"v2": []any{
+			map[string]any{"n": int64(2), "sub": map[string]any{"deep": []any{"leaf"}}},
+			map[string]any{"n": int64(3)},
+		},
+	}
+	if !structEqual(got, want) {
+		t.Fatalf("overlapping views round trip = %#v, want %#v (both windows exact)", got, want)
+	}
+}
+
 // TestBridgeKeywordStringsForceRawMarker: §5.2 — a Go String whose body
 // would re-classify as keyword/compound/multi-line-opener ("null",
 // "true", "false", "(", "((", "()", "(())") MUST be emitted with the

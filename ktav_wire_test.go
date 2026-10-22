@@ -42,6 +42,25 @@ func TestDecodeJSONTrailingDataRejected(t *testing.T) {
 	}
 }
 
+func TestFlattenTaggedTrailingDataRejected(t *testing.T) {
+	// flattenTagged (the LoadsInto path) must mirror decodeJSON's
+	// haveRoot guard: a second top-level JSON value is an error with
+	// the SAME wording, so the documented LoadsInto guarantee is real.
+	_, err := flattenTagged([]byte(`{"a":1} {"b":2}`))
+	if err == nil {
+		t.Fatal("flattenTagged(trailing data) = ok, want error")
+	}
+	if e, ok := err.(*Error); !ok || !strings.Contains(e.Error(), "trailing data after top-level value") {
+		t.Fatalf("flattenTagged(trailing data) err = %v, want trailing-data error", err)
+	}
+	// Controls: single top-level values still flatten.
+	for _, ok := range []string{`{"a":1}`, `[1,{"$i":"7"}]`, `7`, `"s"`, `null`} {
+		if _, err := flattenTagged([]byte(ok)); err != nil {
+			t.Fatalf("flattenTagged(%s): %v", ok, err)
+		}
+	}
+}
+
 func TestDecodeJSONEmptyKeySentinel(t *testing.T) {
 	// "" is a LEGITIMATE JSON key in tagged wire form — the parser must
 	// not use the empty string as an internal sentinel.

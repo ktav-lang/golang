@@ -504,6 +504,14 @@ func TestPureFormatterExactBytes(t *testing.T) {
 		{"comment_only_after_blank_run", "## only\n\n\n", "## only\n"},
 		// Explicit empty compounds as VALUES keep the closed-inline form.
 		{"explicit_empty_compound_values", "a: {}\nb: []\n", "a: {}\nb: []\n"},
+		// Wrapped root array whose first item is an EMPTY compound: the
+		// §5.9.3 wrap keeps the array structure AND the trailing
+		// whole-line comment, and the output is a fixed point
+		// (regression: the wrapped-root-array closer once scheduled no
+		// trailing trivia, dropping `## tail`).
+		{"wrapped_root_array_empty_first_item_trailing_comment",
+			"[\n    {}\n    ## tail\n]\n",
+			"[\n    {}\n    ## tail\n]\n"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

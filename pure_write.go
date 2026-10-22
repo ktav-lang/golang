@@ -9,6 +9,13 @@ func emitStringInPairTo(b *strings.Builder, s string, indent int, preferStripped
 	if stringNeedsMultiline(s) {
 		return emitMultilineTo(b, s, indent, true, preferStripped)
 	}
+	if s == "" {
+		// Empty String value: bare separator, NO trailing space
+		// (`key:` + LF, matching the trivia writer and the corpus
+		// canonical — e.g. inline/object/empty_value pins `x:\n`).
+		b.WriteString(":\n")
+		return ""
+	}
 	if needsRawMarker(s) {
 		b.WriteString(":: ")
 	} else {
@@ -25,6 +32,13 @@ func emitStringAsItemTo(b *strings.Builder, s string, indent int, isRootArrayFir
 	}
 	if stringNeedsMultiline(s) {
 		return emitMultilineTo(b, s, indent, false, preferStripped)
+	}
+	if s == "" {
+		// Empty String ARRAY ITEM: the corpus pins the `::` raw
+		// marker (raw_marker/empty_string_array_item → `::\n`) so the
+		// item never collapses to a blank line.
+		b.WriteString("::\n")
+		return ""
 	}
 	if itemNeedsRawMarker(s) ||
 		(isRootArrayFirst && (isPairShape(s) || strings.HasPrefix(s, "\uFEFF"))) {

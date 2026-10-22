@@ -383,7 +383,34 @@ func classifyScalar(body string, strict bool, line int, span kspan) (*pvalue, *E
 	return pvStr(body), nil
 }
 
-func itoa64(v int64) string { return itoa(int(v)) }
+// itoa64 renders v in decimal. The magnitude is formatted through
+// uint64 so math.MinInt64 (`-9223372036854775808`, § 5.2 integers)
+// survives the negation — int64(-MinInt64) overflows and the former
+// int-based loop emitted just "-" (or "") for it.
+func itoa64(v int64) string {
+	if v == 0 {
+		return "0"
+	}
+	neg := v < 0
+	var m uint64
+	if neg {
+		m = uint64(-(v + 1)) + 1 // no overflow at MinInt64
+	} else {
+		m = uint64(v)
+	}
+	var buf [20]byte
+	i := len(buf)
+	for m > 0 {
+		i--
+		buf[i] = byte('0' + m%10)
+		m /= 10
+	}
+	if neg {
+		i--
+		buf[i] = '-'
+	}
+	return string(buf[i:])
+}
 
 // ─── dotted insertion (§ 5.3.2, § 5.5, § 6.2, § 6.3) ──────────────────
 
@@ -613,6 +640,12 @@ func parseInlineValueRaw(trimmed string, line int, span kspan, depth int, strict
 		switch {
 		case stop == stopCloser && closeIdx == len(trimmed)-1:
 			if trimInline(trimmed[1:len(trimmed)-1]) == "" {
+				// Empty inline object: the compound itself sits at
+				// depth+1 (§ 5.8.4) — the cap applies here too, or a
+				// chain whose innermost level is empty never counts it.
+				if depth+1 >= maxInlineDepth {
+					return nil, errMalformedInlineCompound(line, span, "nesting depth exceeds limit (128)")
+				}
 				return pvObj(), nil
 			}
 			return parseInlineObject(trimmed, line, span, strict, depth+1)
@@ -630,6 +663,11 @@ func parseInlineValueRaw(trimmed string, line int, span kspan, depth int, strict
 		switch {
 		case stop == stopCloser && closeIdx == len(trimmed)-1:
 			if trimInline(trimmed[1:len(trimmed)-1]) == "" {
+				// Empty inline array: same depth+1 accounting as the
+				// empty object above (§ 5.8.4).
+				if depth+1 >= maxInlineDepth {
+					return nil, errMalformedInlineCompound(line, span, "nesting depth exceeds limit (128)")
+				}
 				return pvArr(), nil
 			}
 			return parseInlineArray(trimmed, line, span, strict, depth+1)
@@ -677,6 +715,14 @@ type valueStart struct {
 }
 
 func classifyValueStart(text string, line int, span kspan, strict bool) (valueStart, *Error) {
+	return classifyValueStartDepth(text, line, span, strict, 0)
+}
+
+// classifyValueStartDepth is classifyValueStart with the inline-nesting
+// depth threaded through (§ 5.8.4): line-level callers enter at 0; the
+// depth travels into dispatchInlineCompound so nested compounds keep
+// counting toward the declared 128 cap.
+func classifyValueStartDepth(text string, line int, span kspan, strict bool, depth int) (valueStart, *Error) {
 	trimmed := trimInline(text)
 	if trimmed == "{" {
 		return valueStart{kind: vsOpenObject}, nil
@@ -688,13 +734,13 @@ func classifyValueStart(text string, line int, span kspan, strict bool) (valueSt
 		if trimmed[len(trimmed)-1] == '}' && trimInline(trimmed[1:len(trimmed)-1]) == "" {
 			return valueStart{kind: vsEmptyObject}, nil
 		}
-		return dispatchInlineCompound(trimmed, '{', '}', line, span, strict)
+		return dispatchInlineCompoundDepth(trimmed, '{', '}', line, span, strict, depth)
 	}
 	if len(trimmed) > 0 && trimmed[0] == '[' {
 		if trimmed[len(trimmed)-1] == ']' && trimInline(trimmed[1:len(trimmed)-1]) == "" {
 			return valueStart{kind: vsEmptyArray}, nil
 		}
-		return dispatchInlineCompound(trimmed, '[', ']', line, span, strict)
+		return dispatchInlineCompoundDepth(trimmed, '[', ']', line, span, strict, depth)
 	}
 	switch trimmed {
 	case "(":
@@ -744,6 +790,10 @@ func classifyValueStart(text string, line int, span kspan, strict bool) (valueSt
 }
 
 func dispatchInlineCompound(trimmed string, open, close byte, line int, span kspan, strict bool) (valueStart, *Error) {
+	return dispatchInlineCompoundDepth(trimmed, open, close, line, span, strict, 0)
+}
+
+func dispatchInlineCompoundDepth(trimmed string, open, close byte, line int, span kspan, strict bool, depth int) (valueStart, *Error) {
 	closeIdx, stop, badErr := scanInlineCloser(trimmed, open, close, line, span)
 	if badErr != nil {
 		return valueStart{}, badErr
@@ -753,9 +803,9 @@ func dispatchInlineCompound(trimmed string, open, close byte, line int, span ksp
 		var v *pvalue
 		var err *Error
 		if open == '{' {
-			v, err = parseInlineObject(trimmed, line, span, strict, 0)
+			v, err = parseInlineObject(trimmed, line, span, strict, depth)
 		} else {
-			v, err = parseInlineArray(trimmed, line, span, strict, 0)
+			v, err = parseInlineArray(trimmed, line, span, strict, depth)
 		}
 		if err != nil {
 			return valueStart{}, err

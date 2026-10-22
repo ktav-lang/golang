@@ -2,7 +2,6 @@ package ktav_test
 
 import (
 	"errors"
-	"strconv"
 	"strings"
 	"testing"
 
@@ -82,8 +81,16 @@ func TestErrorSurfacesStructuredFields(t *testing.T) {
 	if ke.Span == nil {
 		t.Error("Span is nil")
 	}
-	if ke.Line > 0 && !strings.Contains(ke.Error(), "at line "+strconv.Itoa(ke.Line)) {
-		t.Errorf("Error() = %q, want it to mention \"at line %d\"", ke.Error(), ke.Line)
+	// Published Rust 0.8.1 message contract: the cabi's Error() text for
+	// a span-only kind is exactly "Syntax error: Unclosed array at end
+	// of input" — it no longer embeds "at line N", so assert the stable
+	// prefix and the kind wording instead (the envelope's structured
+	// Line/Span/LineText fields above stay asserted regardless).
+	if !strings.Contains(ke.Error(), "Syntax error:") {
+		t.Errorf("Error() = %q, want the \"Syntax error:\" prefix", ke.Error())
+	}
+	if !strings.Contains(ke.Error(), "Unclosed") {
+		t.Errorf("Error() = %q, want it to name the Unclosed class", ke.Error())
 	}
 	if strings.HasPrefix(ke.Error(), "{") {
 		t.Errorf("Error() looks like raw JSON: %q", ke.Error())

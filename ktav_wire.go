@@ -145,9 +145,17 @@ func flattenTagged(raw []byte) ([]byte, error) {
 	if err := dec.Decode(&v); err != nil {
 		return nil, err
 	}
+	// haveRoot-style guard, mirroring decodeJSON: LoadsInto must
+	// reject trailing data exactly like Loads/LoadsStrict — a second
+	// top-level JSON value is an error, not a silent overwrite.
+	if _, err := dec.Token(); err != io.EOF {
+		return nil, newError("decode: trailing data after top-level value")
+	}
 	// dec.Decode is encoding/json (internally recursive with its own
 	// ~10k nesting limit and an error, not a crash, beyond it); the
-	// flattening walk below is iterative.
+	// flattening walk below is iterative. json.Marshal on the way out
+	// is encoding/json too — same character: bounded nesting, error
+	// (not crash) beyond its limit.
 	return json.Marshal(flattenAny(v))
 }
 
@@ -216,6 +224,13 @@ func flattenAny(v any) any {
 // ─── Go → tagged JSON (for Dumps) ─────────────────────────────────────
 
 func encodeWriterTagged(v any, forceStrings bool) ([]byte, error) {
+	// NOTE (honest bounds): the final json.Marshal is encoding/json —
+	// internally recursive, with its own nesting limit that returns an
+	// error (not a crash) beyond it. The iterative, explicit-stack
+	// guarantee of this package covers toTagged and prepareWriterValue
+	// below; prepareWriterValue sorts each map's keys (alphabetical
+	// wire order), which costs O(n log n) per map. This package does
+	// not extend encoding/json's limits.
 	value, err := toTagged(v)
 	if err != nil {
 		return nil, err
@@ -254,8 +269,9 @@ func isCompoundRoot(v any) bool {
 // rejecting empty key names with the full dotted path. A single shared
 // path buffer is pushed/popped around each child's subtree (frames
 // record the length to restore); a snapshot copy is taken ONLY when
-// constructing an error, so path bookkeeping is O(1) per edge and the
-// total is linear in tree size.
+// constructing an error, so path bookkeeping is O(1) per edge. The
+// walk itself is linear in tree size EXCEPT the per-map key sort
+// (alphabetical wire order): O(n log n) per map.
 func prepareWriterValue(v any, _ []string, forceStrings bool) (any, error) {
 	type pwFrame struct {
 		dst     any      // map[string]any or []any, mutated in place

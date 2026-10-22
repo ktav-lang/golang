@@ -162,7 +162,7 @@ jobs:
         run: |
           set -euo pipefail
           work="$(mktemp -d "${RUNNER_TEMP:-/tmp}/ktav-consumer.XXXXXX")"
-          trap 'rm -rf "$work"' EXIT
+          # The hosted runner discards this isolated directory after the job.
           # The private module must NOT be resolvable from any warmed
           # runner cache: isolate the module and build caches, and
           # assert the native artifact is genuinely absent.
