@@ -325,6 +325,7 @@ func planInlineSlot(slotKind int, existingRaw bool, repl *pvalue, a, b0 int, wsR
 // ─── linear slot planning ─────────────────────────────────────────────
 
 func planLinearSlot(repl *pvalue, pc planCtx, a, b0, b1 int, wsRaw, wsPlain string) (splicePlan, *Error) {
+	existingRaw := pc.existingRaw
 	body, desiredRaw, err := planValue(repl, pc)
 	if err != nil {
 		return splicePlan{}, err
