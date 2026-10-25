@@ -15,8 +15,8 @@
 - Errors of class `"EditUnsupported"` name pairs with no lossless
   single-range patch: noncontiguous dotted-key/reopen targets, structural
   replacement that would drop interior comment lines (leaf edits inside
-  such containers still work and keep the comments), strings containing
-  CR or a line equal to `))`.
+  such containers still work and keep the comments), or values without a
+  lossless representation in the target context.
 - Every successful patch is re-parsed and semantically verified before
   it is returned, so silent corruption is impossible.
 - The native (C ABI) and pure-Go backends agree byte-for-byte; both are
@@ -40,8 +40,8 @@
 - Ошибки класса `"EditUnsupported"` описывают пары цель/замена без
   lossless-патча: noncontiguous dotted-key/reopen-цели, структурная
   замена, которая потеряла бы внутренние комментарии (правка листа
-  внутри такого контейнера работает и сохраняет комментарии), строки с
-  CR или строкой `))`.
+  внутри такого контейнера работает и сохраняет комментарии), значения без
+  lossless-представления в контексте цели.
 - Каждый успешный патч перед возвратом повторно парсится и семантически
   верифицируется — тихое повреждение невозможно.
 - Native (C ABI) и pure-Go бэкенды совпадают байт-в-байт; оба
@@ -59,7 +59,7 @@
   源文件的 EOL。
 - `"EditUnsupported"` 类错误表示不存在无损单区间补丁：dotted-key/reopen
   形成的不连续目标、会丢失内部注释行的结构性替换（此类容器内的叶编辑
-  仍可用且保留注释）、包含 CR 或等于 `))` 的行的字符串。
+  仍可用且保留注释）、或无法在目标上下文中无损表示的值。
 - 每个成功补丁在返回前都会重新解析并做语义验证 —— 不可能悄悄损坏文档。
 - Native（C ABI）与纯 Go 后端逐字节一致；两者都针对同一回归语料运行。
 
