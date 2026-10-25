@@ -291,6 +291,16 @@ func encodeEditReplacementTagged(v any) ([]byte, error) {
 // walk itself is linear in tree size EXCEPT the per-map key sort
 // (alphabetical wire order): O(n log n) per map.
 func prepareWriterValue(v any, _ []string, forceStrings bool) (any, error) {
+	// Scalar root: nothing to walk. The edit replacement encoder allows
+	// scalar roots (String/Bool/Null are plain values, tagged numerics
+	// are single-entry maps) — the frame loop below only understands
+	// containers. The dumps family still rejects scalar roots upstream
+	// via isCompoundRoot; that guard is untouched.
+	switch v.(type) {
+	case map[string]any, []any:
+	default:
+		return v, nil
+	}
 	type pwFrame struct {
 		dst     any      // map[string]any or []any, mutated in place
 		keys    []string // sorted map keys (nil for a slice frame)

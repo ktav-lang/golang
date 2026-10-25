@@ -829,6 +829,57 @@ func TestEditLiteralUnicodeTextualPath(t *testing.T) {
 	}
 }
 
+// Scalar ROOTS through the edit replacement encoder: String/Bool/Null
+// wire to plain values and Int/Float to single-entry tagged maps — none
+// may trip the dumps-family ScalarRoot guard or panic in the wire walk
+// (a scalar root has nothing to walk; prepareWriterValue must be total).
+func TestEditScalarRootReplacementsAcrossTypes(t *testing.T) {
+	cases := []struct {
+		name string
+		src  string
+		path string
+		repl any
+		want string
+	}{
+		{"string", "port: 8080\nhost: db\n", "port", "db.internal", "port: db.internal\nhost: db\n"},
+		{"int", "port:: 8080\n", "port", int64(9090), "port: 9090\n"},
+		{"bool", "a: x\n", "a", true, "a: true\n"},
+		{"null", "a: x\n", "a", nil, "a: null\n"},
+		{"float", "ratio: 1\n", "ratio", 0.5, "ratio: 0.5\n"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := op().EditValue(tc.src, tc.path, tc.repl)
+			if err != nil || got != tc.want {
+				t.Fatalf("public EditValue = %q, %v; want %q", got, err, tc.want)
+			}
+			wire, werr := encodeEditReplacementTagged(tc.repl)
+			if werr != nil {
+				t.Fatalf("wire encode: %v", werr)
+			}
+			raw, err := PureEditValue([]byte(tc.src), []byte(tc.path), wire)
+			if err != nil || string(raw) != tc.want {
+				t.Fatalf("byte seam = %q, %v; want %q", raw, err, tc.want)
+			}
+		})
+	}
+}
+
+// The packaged pure consumer's exact smoke case: an int replacement in
+// a document with leading/trailing comments, both path forms.
+func TestEditConsumerSmokeIntReplacement(t *testing.T) {
+	src := "## top\n\na: 1\n\n## end\n"
+	want := "## top\n\na: 2\n\n## end\n"
+	got, err := op().EditValue(src, "a", int64(2))
+	if err != nil || got != want {
+		t.Fatalf("EditValue = %q, %v; want %q", got, err, want)
+	}
+	got, err = op().EditValueSegments(src, []string{"a"}, int64(2))
+	if err != nil || got != want {
+		t.Fatalf("EditValueSegments = %q, %v; want %q", got, err, want)
+	}
+}
+
 // ─── transport strictness (source-less Message envelopes) ─────────────
 // The byte seams must mirror the C ABI's transport layer: invalid UTF-8
 // or surrogate-laden transports are Message-class errors, and

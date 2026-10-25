@@ -196,15 +196,18 @@ func applyEdit(text string, original *pvalue, segments []string, repl *pvalue) (
 	newTree := newDoc.(*pvalue)
 	actual, terr := editTakeTarget(newTree, segments)
 	if terr != nil {
-		return "", editUnsupported("semantic mismatch after splice; no lossless patch produced")
+		return "", editUnsupported("semantic mismatch after splice: patched target not addressable")
 	}
 	targetMatches := pvEqual(actual, repl)
 	expected := original
 	if _, terr := editTakeTarget(expected, segments); terr != nil {
-		return "", editUnsupported("semantic mismatch after splice; no lossless patch produced")
+		return "", editUnsupported("semantic mismatch after splice: source target not addressable")
 	}
-	if !targetMatches || !pvEqual(newTree, expected) {
-		return "", editUnsupported("semantic mismatch after splice; no lossless patch produced")
+	if !targetMatches {
+		return "", editUnsupported("semantic mismatch after splice: patched target differs from replacement")
+	}
+	if !pvEqual(newTree, expected) {
+		return "", editUnsupported("semantic mismatch after splice: rest of the tree changed")
 	}
 	return adjusted, nil
 }
