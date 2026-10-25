@@ -547,9 +547,13 @@ func TestEditScalarToEmptyArrayAndBack(t *testing.T) {
 	editCheck(t, "a: []\n", []string{"a"}, int64(1), "a: 1\n")
 }
 
-func TestEditVerificationRejectsBadScalar(t *testing.T) {
-	// A scalar whose lexical text is not valid Ktav must fail closed.
-	editCheckUnsupported(t, "a: 1\n", "a", map[string]any{})
+func TestEditVerificationEmptyObjectReplacement(t *testing.T) {
+	// map[string]any{} is a VALID empty Object replacement (Rust:
+	// plan_value renders it as "{}" in a non-block pair slot) — the
+	// verification guard must accept it and pin the exact bytes.
+	editCheck(t, "a: 1\n", []string{"a"}, map[string]any{}, "a: {}\n")
+	// Empty Object into a BLOCK target keeps the block open/closer form.
+	editCheck(t, "a: {\n  x: 1\n}\n", []string{"a"}, map[string]any{}, "a: {\n}\n")
 }
 
 func TestEditVerificationPreservesNullSiblings(t *testing.T) {

@@ -85,7 +85,9 @@ func applyEdit(text string, original *pvalue, segments []string, repl *pvalue) (
 		anchor = slot.colon
 	case slotItem:
 		bodyRange = [2]int{slot.b0, slot.b1}
-		anchor = slot.b0
+		// Item anchor = marker/line start (Rust Slot::Item start), not
+		// the body: the `::` zone lives BEFORE b0.
+		anchor = slot.colon
 	default: // slotBlock
 		bodyRange = [2]int{slot.b0, slot.b1}
 		if slot.hasAnchor {
@@ -803,7 +805,8 @@ func detectEOL(text string, pos int) string {
 			return "\r"
 		}
 	}
-	// Fall back to the last terminator before pos.
+	// Fall back to the last terminator before pos. A '\n' immediately
+	// preceded by '\r' is the TAIL of a CRLF pair, not a lone LF.
 	for i := pos - 1; i >= 0; i-- {
 		switch text[i] {
 		case '\r':
@@ -812,6 +815,9 @@ func detectEOL(text string, pos int) string {
 			}
 			return "\r"
 		case '\n':
+			if i > 0 && text[i-1] == '\r' {
+				return "\r\n"
+			}
 			return "\n"
 		}
 	}

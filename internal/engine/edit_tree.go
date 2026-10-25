@@ -373,7 +373,9 @@ func (b *editBuilder) handleArrayItem(line string, lineNum int, ts kspan) error 
 			return err
 		}
 		body := trimLeadingInline(rest)
-		node := editScalarNode(&editSlot{kind: slotItem, b0: editOffInLine(line, lineStart, body), b1: ts.end})
+		// colon carries the MARKER start for items (Rust Slot::Item
+		// start): the splice's anchor zone `::`/ws lives before b0.
+		node := editScalarNode(&editSlot{kind: slotItem, colon: ts.start, b0: editOffInLine(line, lineStart, body), b1: ts.end})
 		return b.pushItem(node)
 	}
 
@@ -384,11 +386,11 @@ func (b *editBuilder) handleArrayItem(line string, lineNum int, ts kspan) error 
 	bodyStart := editOffInLine(line, lineStart, trimLeadingInline(line))
 	switch vs.kind {
 	case vsScalar, vsNull, vsBool, vsInt, vsFloat:
-		return b.pushItem(editScalarNode(&editSlot{kind: slotItem, b0: bodyStart, b1: ts.end}))
+		return b.pushItem(editScalarNode(&editSlot{kind: slotItem, colon: ts.start, b0: bodyStart, b1: ts.end}))
 	case vsEmptyObject:
-		return b.pushItem(editEmptyObjectNode(&editSlot{kind: slotItem, b0: bodyStart, b1: ts.end}))
+		return b.pushItem(editEmptyObjectNode(&editSlot{kind: slotItem, colon: ts.start, b0: bodyStart, b1: ts.end}))
 	case vsEmptyArray:
-		return b.pushItem(editEmptyArrayNode(&editSlot{kind: slotItem, b0: bodyStart, b1: ts.end}))
+		return b.pushItem(editEmptyArrayNode(&editSlot{kind: slotItem, colon: ts.start, b0: bodyStart, b1: ts.end}))
 	case vsOpenObject:
 		b.stack = append(b.stack, &editFrame{object: true, table: newEditTable(), rangeStart: bodyStart})
 		return nil
@@ -411,7 +413,7 @@ func (b *editBuilder) handleArrayItem(line string, lineNum int, ts kspan) error 
 			return ierr
 		}
 		node.inline = false
-		node.slot = &editSlot{kind: slotItem, b0: bodyStart, b1: ts.end}
+		node.slot = &editSlot{kind: slotItem, colon: ts.start, b0: bodyStart, b1: ts.end}
 		return b.pushItem(node)
 	}
 }
@@ -607,7 +609,7 @@ func positionInline(body string, baseAbs, lineNum int, span kspan, isObject bool
 		if ierr != nil {
 			return nil, ierr
 		}
-		node.slot = &editSlot{kind: slotItem, b0: valueAbs, b1: segEnd}
+		node.slot = &editSlot{kind: slotItem, colon: segBase, b0: valueAbs, b1: segEnd}
 		items = append(items, node)
 	}
 	return &editNode{kind: kArr, items: items, inline: true}, nil
