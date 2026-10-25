@@ -11,9 +11,7 @@ This changelog tracks **binding releases**, not changes to the Ktav format
 itself — for the latter see
 [`ktav-lang/spec`](https://github.com/ktav-lang/spec/blob/main/CHANGELOG.md).
 
-## 0.8.1 — 2026-10-22
-
-### Added
+## Unreleased — 0.9 preparation
 
 - Source editing (0.9): `EditValue(src, path, replacement)` and
   `EditValueSegments(src, segments, replacement)` splice exactly the
@@ -33,6 +31,15 @@ itself — for the latter see
   fixture-driven regression runner validating `expected_location`
   (line, raw-byte start, exact end or minimum_end) on both backends,
   native and pure.
+
+### Documentation
+
+- Expand README examples for dotted and literal-key paths, mixed arrays, String/Integer identity, multiline unfolding, byte-identical no-op and BOM/CRLF/EOF preservation. Clarify 0.9 byte diagnostics, safe refusal, ABI 2 and standalone pure usage; these additions are not part of published 0.8.1.
+
+## 0.8.1 — 2026-10-22
+
+### Added
+
 - `pure` is a separate stdlib-only package: `import "github.com/ktav-lang/golang/pure"`; package functions and `pure.New()` expose all eight operations and `Error`/`Span` aliases. The legacy root `BackendPure` API remains, but importing the root module retains its native `purego` and `x/sys` dependencies.
 - The native core is upgraded to the published Rust `ktav` 0.8.1 with spec 0.8.1, covering all five corpus categories (valid, invalid, unrepresentable, parseable-unrepresentable, strict-lossy).
 - The packaged pure consumer CI job runs the entire 0.8 conformance corpus through the installed `/pure` artifact with `CGO_ENABLED=0` and with `rustc`/`cargo` trapped on `PATH`, in addition to the file-only proxy, readonly mode, and import whitelist.

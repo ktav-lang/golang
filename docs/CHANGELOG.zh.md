@@ -10,9 +10,7 @@ MINOR 递进视为破坏性变更。
 本 changelog 跟踪**绑定发布**,不涉及 Ktav 格式本身的变更 —— 后者见
 [`ktav-lang/spec`](https://github.com/ktav-lang/spec/blob/main/CHANGELOG.md).
 
-## 0.8.1 — 2026-10-22
-
-### 新增
+## 尚未发布 — 0.9 准备版本
 
 - 源码编辑（0.9）：`EditValue(src, path, replacement)` 与
   `EditValueSegments(src, segments, replacement)` 在源文本内只拼接目标值
@@ -28,6 +26,15 @@ MINOR 递进视为破坏性变更。
   diagnostics09 EOF + 非法 UTF-8 用例），并新增以夹具驱动的回归运行器，
   在两个后端上验证 `expected_location`（line、原始字节 start、精确 end
   或 minimum_end）。
+
+### 文档
+
+- 扩展 README 示例：点分路径与字面键、混合数组、String/Integer 区别、多行展开、逐字节 no-op 及 BOM/CRLF/EOF 保留。明确 0.9 字节诊断、安全拒绝、ABI 2 和独立纯实现用法；这些新增功能不属于已发布的 0.8.1。
+
+## 0.8.1 — 2026-10-22
+
+### 新增
+
 - `pure` 是独立的仅标准库包：`import "github.com/ktav-lang/golang/pure"`；包级函数和 `pure.New()` 提供全部八项操作及 `Error`/`Span` 别名。根包的兼容 `BackendPure` API 保留，但导入根模块仍会带入 native 依赖 `purego` 和 `x/sys`。
 - 原生核心升级到已发布的 Rust `ktav` 0.8.1，配套规范 0.8.1，覆盖全部五类语料（valid、invalid、unrepresentable、parseable-unrepresentable、strict-lossy）。
 - 打包 pure 消费者的 CI 任务在仅文件代理、readonly 模式和导入白名单之外，还通过已安装的 `/pure` 产物运行完整的 0.8 一致性语料，使用 `CGO_ENABLED=0` 并在 `PATH` 上拦截 `rustc`/`cargo`。

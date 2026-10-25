@@ -11,9 +11,7 @@ bump MINOR считается ломающим.
 формата Ktav — за ними см.
 [`ktav-lang/spec`](https://github.com/ktav-lang/spec/blob/main/CHANGELOG.md).
 
-## 0.8.1 — 2026-10-22
-
-### Добавлено
+## Ещё не выпущено — подготовка 0.9
 
 - Правка исходника (0.9): `EditValue(src, path, replacement)` и
   `EditValueSegments(src, segments, replacement)` сплайсят ровно
@@ -34,6 +32,15 @@ bump MINOR считается ломающим.
   за счёт 72 новых diagnostics09 — EOF + malformed UTF-8) с
   fixture-driven regression-runner, проверяющим `expected_location`
   (line, raw-byte start, точный end или minimum_end) на обоих бэкендах.
+
+### Документация
+
+- Дополнены примеры README: dotted-пути и буквальные ключи, смешанные массивы, различие String/Integer, раскрытие многострочной замены, побайтовый no-op и сохранение BOM/CRLF/EOF. Уточнены байтовая диагностика 0.9, безопасные отказы, ABI 2 и самостоятельный pure-бэкенд; дополнения не относятся к опубликованному 0.8.1.
+
+## 0.8.1 — 2026-10-22
+
+### Добавлено
+
 - `pure` — отдельный пакет только со стандартной библиотекой: `import "github.com/ktav-lang/golang/pure"`; функции пакета и `pure.New()` предоставляют все восемь операций и псевдонимы `Error`/`Span`. Совместимый API `BackendPure` корневого пакета сохранён, но импорт корневого модуля сохраняет native-зависимости `purego` и `x/sys`.
 - Нативное ядро обновлено до опубликованного Rust `ktav` 0.8.1 со спецификацией 0.8.1 и всеми пятью категориями корпуса (valid, invalid, unrepresentable, parseable-unrepresentable, strict-lossy).
 - CI-задача упакованного pure-потребителя прогоняет весь корпус конформности 0.8 через установленный артефакт `/pure` с `CGO_ENABLED=0` и с перехваченными на `PATH` `rustc`/`cargo`, в дополнение к файловому proxy, readonly-режиму и белому списку импортов.
