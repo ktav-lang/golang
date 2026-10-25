@@ -264,6 +264,24 @@ func isCompoundRoot(v any) bool {
 	}
 }
 
+// encodeEditReplacementTagged is the edit-engine's Go→wire encoder: the
+// SAME numeric tagging and prepare pass as encodeWriterTagged, but
+// WITHOUT the document-root restriction — edit replacements may be bare
+// scalars (the contract explicitly allows scalar replacement; only the
+// dumps family requires an Object/Array root, and that guard stays
+// there). Empty key names and non-finite floats are still rejected.
+func encodeEditReplacementTagged(v any) ([]byte, error) {
+	value, err := toTagged(v)
+	if err != nil {
+		return nil, err
+	}
+	value, err = prepareWriterValue(value, nil, false)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(value)
+}
+
 // prepareWriterValue walks the tagged tree iteratively (explicit frame
 // stack), coercing non-finite float payloads per forceStrings and
 // rejecting empty key names with the full dotted path. A single shared
@@ -273,6 +291,16 @@ func isCompoundRoot(v any) bool {
 // walk itself is linear in tree size EXCEPT the per-map key sort
 // (alphabetical wire order): O(n log n) per map.
 func prepareWriterValue(v any, _ []string, forceStrings bool) (any, error) {
+	// Scalar root: nothing to walk. The edit replacement encoder allows
+	// scalar roots (String/Bool/Null are plain values, tagged numerics
+	// are single-entry maps) — the frame loop below only understands
+	// containers. The dumps family still rejects scalar roots upstream
+	// via isCompoundRoot; that guard is untouched.
+	switch v.(type) {
+	case map[string]any, []any:
+	default:
+		return v, nil
+	}
 	type pwFrame struct {
 		dst     any      // map[string]any or []any, mutated in place
 		keys    []string // sorted map keys (nil for a slice frame)

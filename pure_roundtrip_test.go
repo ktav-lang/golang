@@ -2,7 +2,7 @@ package ktav_test
 
 // Cross-backend read/write round trips plus INDEPENDENT canonical
 // oracle assertions. The hand-written expectations below are transcribed
-// from the spec corpus oracles on disk (spec/versions/0.8/tests/...) and
+// from the spec corpus oracles on disk (spec/versions/0.9/tests/...) and
 // §5.9 itself — not from either implementation — so two equally wrong
 // backends cannot pass by agreeing. Cross-backend byte equality is
 // asserted too, but explicitly as a secondary check. Every backend leg
@@ -16,7 +16,7 @@ import (
 )
 
 // representativeValidFixtures are corpus stems (relative to
-// spec/versions/0.8/tests/valid/) covering each major syntax family;
+// spec/versions/0.9/tests/valid/) covering each major syntax family;
 // used for native↔pure value round trips. Every stem is verified to
 // exist under tests/valid/ on disk.
 var representativeValidFixtures = []string{

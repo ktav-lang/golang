@@ -18,7 +18,7 @@ import (
 )
 
 func main() {
-	spec := flag.String("spec", "", "path to the spec corpus tests dir (default: $KTAV_SPEC_DIR or spec/versions/0.8/tests)")
+	spec := flag.String("spec", "", "path to the spec corpus tests dir (default: $KTAV_SPEC_DIR or spec/versions/0.9/tests)")
 	flag.Parse()
 	if err := run(*spec); err != nil {
 		fmt.Fprintln(os.Stderr, "pureconsumer:", err)
@@ -38,12 +38,12 @@ func run(specFlag string) error {
 		specRoot = os.Getenv("KTAV_SPEC_DIR")
 	}
 	if specRoot == "" {
-		specRoot = filepath.Join("spec", "versions", "0.8", "tests")
+		specRoot = filepath.Join("spec", "versions", "0.9", "tests")
 	}
 	if err := runCorpus(specRoot); err != nil {
 		return err
 	}
-	fmt.Println("pureconsumer: all package and instance operations OK; full 0.8 corpus OK")
+	fmt.Println("pureconsumer: all package and instance operations OK; full 0.9 corpus OK")
 	return nil
 }
 
@@ -146,6 +146,20 @@ func runSmoke() error {
 	}
 	if out, err := ops.CanonicalFromSource("k: [1, 2]\n"); err != nil || out != "k: [\n    1\n    2\n]\n" {
 		return fmt.Errorf("instance CanonicalFromSource = %q, %v", out, err)
+	}
+	// Source-edit entry points (0.9): lossless splice, both path forms.
+	edited, err := pure.EditValue("## top\n\na: 1\n\n## end\n", "a", int64(2))
+	if err != nil || edited != "## top\n\na: 2\n\n## end\n" {
+		return fmt.Errorf("EditValue = %q, %v", edited, err)
+	}
+	editedSegs, err := pure.EditValueSegments("## top\n\na: 1\n\n## end\n", []string{"a"}, int64(2))
+	if err != nil || editedSegs != "## top\n\na: 2\n\n## end\n" {
+		return fmt.Errorf("EditValueSegments = %q, %v", editedSegs, err)
+	}
+	if _, err := pure.EditValue("a: 1\n", "missing", int64(2)); err == nil {
+		return fmt.Errorf("EditValue: expected EditNotFound, got ok")
+	} else if pe, ok := err.(*pure.Error); !ok || pe.Class != "EditNotFound" {
+		return fmt.Errorf("EditValue error = %#v, want EditNotFound", err)
 	}
 	_, err = pure.Loads("anchor: ok\njust some text\n")
 	var structured *pure.Error

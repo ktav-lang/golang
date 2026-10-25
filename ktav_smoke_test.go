@@ -11,18 +11,19 @@ import (
 	"github.com/ktav-lang/golang/internal/native"
 )
 
-// TestNativeVersionMatchesLibVersion is the CI-visible provenance
-// guarantee: the cabi built from workspace.version (Cargo.toml, 0.8.1)
-// is the binary the Go suite binds, and the loader refuses any artifact
-// whose ktav_version differs from native.LibVersion.
-func TestNativeVersionMatchesLibVersion(t *testing.T) {
+// TestNativeVersionMatchesCoreVersion is the CI-visible provenance
+// guarantee: the cabi is built from the parent-pinned git core 0.9.0,
+// and ktav_version() reports exactly that. (The loader's hard
+// compatibility gate is ktav_abi_version() == 2; LibVersion stays the
+// release/cache tag and is intentionally NOT the core version.)
+func TestNativeVersionMatchesCoreVersion(t *testing.T) {
 	requireCabi(t)
 	got, err := ktav.NativeVersion()
 	if err != nil {
 		t.Fatalf("NativeVersion: %v", err)
 	}
-	if got != native.LibVersion {
-		t.Fatalf("ktav_cabi version %q does not match expected %q", got, native.LibVersion)
+	if got != native.CoreVersion {
+		t.Fatalf("ktav_cabi version %q does not match expected %q", got, native.CoreVersion)
 	}
 }
 

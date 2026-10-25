@@ -39,8 +39,10 @@ type fixtureFlag struct {
 	Note     string   `json:"note"`
 }
 
-var spec08Counts = map[string]int{
-	"valid": 228, "invalid": 90, "unrepresentable": 5,
+// spec09Counts pins the 0.9 corpus (412 fixtures; invalid grew to 162
+// with the 72 new diagnostics09 source diagnostics).
+var spec09Counts = map[string]int{
+	"valid": 228, "invalid": 162, "unrepresentable": 5,
 	"parseable-unrepresentable": 4, "strict-lossy": 13,
 }
 
@@ -243,7 +245,7 @@ func runCorpus(specRoot string) error {
 	if err != nil {
 		return err
 	}
-	stems, err := validateAndCollect(specRoot, manifest, spec08Counts)
+	stems, err := validateAndCollect(specRoot, manifest, spec09Counts)
 	if err != nil {
 		return err
 	}
@@ -265,7 +267,7 @@ func runCorpus(specRoot string) error {
 		return err
 	}
 	fmt.Printf("pureconsumer: corpus %s\n", func() string {
-		parts := make([]string, 0, len(spec08Counts))
+		parts := make([]string, 0, len(spec09Counts))
 		for _, category := range []string{"valid", "invalid", "unrepresentable", "parseable-unrepresentable", "strict-lossy"} {
 			parts = append(parts, fmt.Sprintf("%s=%d", category, counts[category]))
 		}
@@ -351,6 +353,9 @@ func runInvalid(root string, stems []string) (int, error) {
 		if err := assertInvalidOracleError(err, oracleRaw); err != nil {
 			return 0, fmt.Errorf("invalid %s: %w", stem, err)
 		}
+		if err := assertExpectedLocation(err, src, oracleRaw); err != nil {
+			return 0, fmt.Errorf("invalid %s: %w", stem, err)
+		}
 	}
 	return len(stems), nil
 }
@@ -369,8 +374,8 @@ func runUnrepresentable(root string) (int, error) {
 			cases = append(cases, entry.Name())
 		}
 	}
-	if len(cases) != spec08Counts["unrepresentable"] {
-		return 0, fmt.Errorf("unrepresentable: found %d fixtures, manifest pins %d", len(cases), spec08Counts["unrepresentable"])
+	if len(cases) != spec09Counts["unrepresentable"] {
+		return 0, fmt.Errorf("unrepresentable: found %d fixtures, manifest pins %d", len(cases), spec09Counts["unrepresentable"])
 	}
 	sort.Strings(cases)
 	for _, name := range cases {

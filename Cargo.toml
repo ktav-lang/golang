@@ -10,7 +10,8 @@ repository = "https://github.com/ktav-lang/golang"
 rust-version = "1.71"
 
 [workspace.dependencies]
-ktav = ">=0.8.1, <0.9"
+# Подготовка 0.9: immutable core pin с source-edit и ABI 2; пакет ещё не опубликован.
+ktav = { git = "https://github.com/ktav-lang/rust", rev = "447a00bd012e8d3f347c7e1eb59c3f0d9a78332f" }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
 indexmap = "2"

@@ -40,6 +40,27 @@ var spec08Counts = map[string]int{
 	"parseable-unrepresentable": 4, "strict-lossy": 13,
 }
 
+// spec09Counts pins the 0.9 corpus (412 fixtures). The invalid category
+// grew to 162 with the 72 new diagnostics09 source diagnostics (30 EOF
+// + 42 malformed UTF-8); every other category is frozen from 0.8.
+var spec09Counts = map[string]int{
+	"valid": 228, "invalid": 162, "unrepresentable": 5,
+	"parseable-unrepresentable": 4, "strict-lossy": 13,
+}
+
+// diagnostics09Count is the pinned number of 0.9 diagnostics09 fixtures
+// under invalid/. The spec09 regression runner fails when the pinned
+// gitlink carries a different set.
+const diagnostics09Count = 72
+
+func validateSpec09Corpus(root string) error {
+	manifest, err := loadCorpusManifest(root)
+	if err != nil {
+		return err
+	}
+	return validateCorpus(root, manifest, spec09Counts)
+}
+
 func loadCorpusManifest(root string) (*corpusManifest, error) {
 	raw, err := os.ReadFile(filepath.Join(root, "manifest.json"))
 	if err != nil {
@@ -490,6 +511,81 @@ func writeTinyManifest(t *testing.T, root string, manifest *corpusManifest) {
 	if err := os.WriteFile(filepath.Join(root, "manifest.json"), raw, 0600); err != nil {
 		t.Fatal(err)
 	}
+}
+
+// expectedLocationShape is the 0.9 expected_location metadata: a 1-based
+// line, a raw-byte UTF-8 start offset (BOM included, never normalised),
+// and EXACTLY ONE of `end` (exact span end) or `minimum_end` (the span
+// must cover at least this offset). Both absent, or both present, is a
+// malformed oracle — rejected, never ignored.
+type expectedLocationShape struct {
+	Line       *int `json:"line"`
+	Start      *int `json:"start"`
+	End        *int `json:"end"`
+	MinimumEnd *int `json:"minimum_end"`
+}
+
+// assertExpectedLocation validates the 0.9 expected_location metadata
+// against the structured error's line and span. It never skips: when
+// the oracle carries expected_location, both the metadata shape and the
+// error's line/span must satisfy it (line >= 1, nonempty covering span,
+// exact end OR minimum_end respected). InvalidUtf8 additionally must
+// leave line_text null — replacement characters must never be decoded
+// as if the source were valid.
+func assertExpectedLocation(err error, src []byte, raw []byte) error {
+	var oracle struct {
+		ExpectedError    string                 `json:"expected_error"`
+		ExpectedLocation *expectedLocationShape `json:"expected_location"`
+	}
+	if err := json.Unmarshal(raw, &oracle); err != nil {
+		return fmt.Errorf("decode expected_location oracle: %w", err)
+	}
+	loc := oracle.ExpectedLocation
+	if loc == nil {
+		return nil
+	}
+	var got *ktav.Error
+	if !errors.As(err, &got) {
+		return fmt.Errorf("expected_location check: error is not *ktav.Error: %T (%v)", err, err)
+	}
+	if loc.Line == nil || loc.Start == nil {
+		return fmt.Errorf("expected_location metadata needs line and start")
+	}
+	if loc.End == nil && loc.MinimumEnd == nil {
+		return fmt.Errorf("expected_location metadata needs exactly one of end/minimum_end")
+	}
+	if loc.End != nil && loc.MinimumEnd != nil {
+		return fmt.Errorf("expected_location metadata must not carry both end and minimum_end")
+	}
+	if *loc.Line < 1 {
+		return fmt.Errorf("expected_location line must be >= 1, got %d", *loc.Line)
+	}
+	if *loc.Start < 0 || *loc.Start > len(src) {
+		return fmt.Errorf("expected_location start %d out of range (source is %d bytes)", *loc.Start, len(src))
+	}
+	if got.Line != *loc.Line {
+		return fmt.Errorf("error line = %d, expected_location line = %d", got.Line, *loc.Line)
+	}
+	if got.Span == nil {
+		return fmt.Errorf("error has null span; expected_location pins start=%d", *loc.Start)
+	}
+	if got.Span.Start != *loc.Start {
+		return fmt.Errorf("error span start = %d, expected_location start = %d", got.Span.Start, *loc.Start)
+	}
+	if got.Span.End <= got.Span.Start {
+		return fmt.Errorf("error span [%d,%d) is empty; spans must be nonempty and covering", got.Span.Start, got.Span.End)
+	}
+	if loc.End != nil {
+		if got.Span.End != *loc.End {
+			return fmt.Errorf("error span end = %d, expected_location end = %d", got.Span.End, *loc.End)
+		}
+	} else if got.Span.End < *loc.MinimumEnd {
+		return fmt.Errorf("error span end = %d is below expected_location minimum_end = %d", got.Span.End, *loc.MinimumEnd)
+	}
+	if oracle.ExpectedError == "InvalidUtf8" && got.LineText != "" {
+		return fmt.Errorf("InvalidUtf8 must leave line_text null, got %q", got.LineText)
+	}
+	return nil
 }
 
 func TestReadFixtureSourcePreservesRawBytes(t *testing.T) {

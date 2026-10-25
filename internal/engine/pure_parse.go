@@ -93,7 +93,10 @@ func errInvalidKey(line int, key string, span kspan) *Error {
 		"Syntax error: Invalid key at line "+itoa(line)+": '"+key+"'", "", "", splitKeyPath(key))
 }
 
-func errUnclosedCompound(kind string, span kspan) *Error {
+// errUnclosedCompound derives the envelope line from the OPENER's byte
+// offset (spec 0.9 diagnostics: "UnclosedCompound — innermost
+// opener..EOF and line opener"); the span already runs opener..EOF.
+func errUnclosedCompound(src, kind string, span kspan) *Error {
 	msg := "Syntax error: Unclosed object at end of input"
 	switch kind {
 	case "array":
@@ -101,7 +104,7 @@ func errUnclosedCompound(kind string, span kspan) *Error {
 	case "multiline":
 		msg = "Syntax error: Unclosed multi-line string at end of input"
 	}
-	return structErr("UnclosedCompound", 0, span, "§6.1", msg, "", "", nil)
+	return structErr("UnclosedCompound", lineOfOffset(src, span.start), span, "§6.1", msg, "", "", nil)
 }
 
 func errUnbalancedBracket(line int, span kspan, expected byte, found byte) *Error {

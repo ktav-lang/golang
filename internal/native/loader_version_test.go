@@ -1,40 +1,43 @@
 package native
 
-// Unit tests for the extracted artifact-version comparison
-// (checkArtifactVersion): the match path, the exact mismatch message,
-// and the empty/null-string rejection. No library is dlopened — the
-// function is pure, which is the point of the extraction.
+// Unit tests for the extracted artifact-ABI comparison
+// (checkArtifactABI): the match path, the exact mismatch message, and
+// the rejection of every wrong value. No library is dlopened — the
+// function is pure, which is the point of the extraction. The ABI gate
+// (expected 2 since the source-edit symbols joined the exported set) is
+// the loader's sole provenance check; ktav_version is diagnostics only.
 
 import (
 	"strings"
 	"testing"
 )
 
-func TestCheckArtifactVersionMatches(t *testing.T) {
-	if err := checkArtifactVersion(LibVersion); err != nil {
-		t.Fatalf("checkArtifactVersion(%q) = %v, want nil", LibVersion, err)
+func TestCheckArtifactABIMatches(t *testing.T) {
+	if err := checkArtifactABI(ExpectedABIVersion); err != nil {
+		t.Fatalf("checkArtifactABI(%d) = %v, want nil", ExpectedABIVersion, err)
 	}
 }
 
-func TestCheckArtifactVersionMismatch(t *testing.T) {
-	err := checkArtifactVersion("0.8.0")
-	if err == nil {
-		t.Fatal("expected mismatch error, got nil")
-	}
-	want := "ktav_cabi version 0.8.0 does not match expected " + LibVersion
-	if err.Error() != want {
-		t.Fatalf("error = %q, want %q", err.Error(), want)
-	}
-}
-
-func TestCheckArtifactVersionEmptyAndNull(t *testing.T) {
-	// The loader maps a null C string to an early error; an empty
-	// reported string must still be rejected here, never accepted.
-	for _, got := range []string{"", " ", "0.8.1\n"} {
-		if err := checkArtifactVersion(got); err == nil {
-			t.Fatalf("checkArtifactVersion(%q) = nil, want mismatch", got)
-		} else if !strings.Contains(err.Error(), "does not match expected") {
-			t.Fatalf("checkArtifactVersion(%q) = %v, want mismatch message", got, err)
+func TestCheckArtifactABIRejectsEveryWrongValue(t *testing.T) {
+	// 1 is the pre-source-edit ABI: an old binary must be refused with
+	// a clear version-mismatch error, never substituted with the pure
+	// backend.
+	for _, got := range []uint64{0, 1, 3, 99} {
+		err := checkArtifactABI(got)
+		if err == nil {
+			t.Fatalf("checkArtifactABI(%d) = nil, want mismatch", got)
 		}
+		want := "does not match expected 2"
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("checkArtifactABI(%d) = %q, want message containing %q", got, err.Error(), want)
+		}
+	}
+}
+
+func TestExpectedABIVersionIsTwo(t *testing.T) {
+	// The bump 1 → 2 accompanied the two source-edit symbols; a silent
+	// revert of either would corrupt the load contract.
+	if ExpectedABIVersion != 2 {
+		t.Fatalf("ExpectedABIVersion = %d, want 2", ExpectedABIVersion)
 	}
 }

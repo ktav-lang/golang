@@ -20,14 +20,33 @@ import (
 	"runtime"
 	"sync"
 	"time"
-	"unsafe"
 
 	"github.com/ebitengine/purego"
 )
 
-// LibVersion is the version of the companion `ktav_cabi` shared library
-// this Go module expects. It is in lockstep with the Go module tag.
+// LibVersion is the release tag the cached/downloaded `ktav_cabi`
+// artifacts are keyed on (in lockstep with the Go module tag at release
+// time; package versions are NOT bumped for 0.9). The REAL
+// compatibility gate is the exported C ABI shape: verifyABI requires
+// ktav_abi_version() == ExpectedABIVersion, so an old ABI-1 binary is
+// rejected with a clear version error no matter what its
+// ktav_version() string says.
 const LibVersion = "0.8.1"
+
+// CoreVersion is the ktav core version the workspace cabi is pinned to
+// (0.9.0 from the parent-approved git pin); it is what ktav_version()
+// reports. Diagnostics/provenance only — the ABI gate above is what
+// refuses incompatible artifacts.
+const CoreVersion = "0.9.0"
+
+// ExpectedABIVersion is the exported C ABI shape this module was
+// compiled against: the ktav_* symbol set, their signatures and the
+// error encoding. Bumped 1 → 2 (user-approved, 2026-10-25) when the two
+// source-edit symbols ktav_edit_value / ktav_edit_value_segments joined
+// the exported set. A library reporting any other ABI version is
+// refused at load time — never silently substituted with the pure
+// backend.
+const ExpectedABIVersion = 2
 
 // releaseAssetBase is the GitHub Release where prebuilt binaries live.
 // Tagged `v<LibVersion>`; per-platform asset naming is handled below.
@@ -41,6 +60,9 @@ type Syms struct {
 	DumpsForceStrings uintptr
 	EmitCanonical     uintptr
 	Format            uintptr
+	EditValue         uintptr
+	EditValueSegments uintptr
+	AbiVersion        uintptr
 	Free              uintptr
 	Version           uintptr
 }
@@ -106,6 +128,31 @@ func Load() (*Syms, error) {
 			loadErr = err
 			return
 		}
+		// Source-edit symbols (0.9): a pre-0.9 cabi lacks them, and the
+		// dlsym failure surfaces as a clear "symbol ktav_edit_value"
+		// load error — never a silent pure fallback.
+		if err := bindSym(handle, "ktav_edit_value", &s.EditValue); err != nil {
+			loadErr = err
+			return
+		}
+		if err := bindSym(handle, "ktav_edit_value_segments", &s.EditValueSegments); err != nil {
+			loadErr = err
+			return
+		}
+		if err := bindSym(handle, "ktav_abi_version", &s.AbiVersion); err != nil {
+			loadErr = err
+			return
+		}
+		// ABI provenance gate: the loaded binary must declare exactly
+		// the exported-shape version this module expects
+		// (ktav_abi_version), no matter how it was resolved (cache,
+		// download, $KTAV_LIB_PATH or SetLibraryPath). An ABI-1 (pre
+		// source-edit) library FAILS here with a clear version error
+		// rather than silently binding an incompatible cabi.
+		if err := verifyABI(s); err != nil {
+			loadErr = err
+			return
+		}
 		if err := bindSym(handle, "ktav_free", &s.Free); err != nil {
 			loadErr = err
 			return
@@ -114,42 +161,32 @@ func Load() (*Syms, error) {
 			loadErr = err
 			return
 		}
-		// Artifact provenance check: the loaded binary must declare
-		// exactly the version this module expects (ktav_version), no
-		// matter how it was resolved (cache, download, $KTAV_LIB_PATH
-		// or SetLibraryPath). A mismatched override FAILS here rather
-		// than silently binding an out-of-sync cabi.
-		if err := verifyVersion(s); err != nil {
-			loadErr = err
-			return
-		}
 		loaded = s
 	})
 	return loaded, loadErr
 }
 
-// verifyVersion dlsym-calls ktav_version and requires an exact match
-// with LibVersion. It is the ONLY loaded-artifact heuristic.
-func verifyVersion(s *Syms) error {
-	ret, _, _ := purego.SyscallN(s.Version)
-	if ret == 0 {
-		return fmt.Errorf("ktav_cabi version query returned null; expected %s", LibVersion)
+// verifyABI dlsym-calls ktav_abi_version and requires an exact match
+// with ExpectedABIVersion. It is the ONLY loaded-artifact heuristic:
+// ktav_version stays a diagnostics string (NativeVersion), since the
+// core crate version moves every release while the ABI shape moves
+// almost never.
+func verifyABI(s *Syms) error {
+	ret, _, _ := purego.SyscallN(s.AbiVersion)
+	got := uint64(ret)
+	if got != ExpectedABIVersion {
+		return checkArtifactABI(got)
 	}
-	// `const char *` from Rust with static lifetime; walk to NUL.
-	base := unsafe.Pointer(ret)
-	n := 0
-	for *(*byte)(unsafe.Add(base, n)) != 0 {
-		n++
-	}
-	return checkArtifactVersion(string(unsafe.Slice((*byte)(base), n)))
+	return nil
 }
 
-// checkArtifactVersion compares a reported artifact version string
-// against LibVersion. Split out from verifyVersion so both the match
-// and mismatch paths are unit-testable without dlopening a library.
-func checkArtifactVersion(got string) error {
-	if got != LibVersion {
-		return fmt.Errorf("ktav_cabi version %s does not match expected %s", got, LibVersion)
+// checkArtifactABI compares a reported ABI version against
+// ExpectedABIVersion. Split out from verifyABI so both the match and
+// mismatch paths are unit-testable without dlopening a library.
+func checkArtifactABI(got uint64) error {
+	if got != ExpectedABIVersion {
+		return fmt.Errorf("ktav_cabi ABI version %d does not match expected %d (source-edit symbols require ABI 2); rebuild or refresh the native library",
+			got, ExpectedABIVersion)
 	}
 	return nil
 }
