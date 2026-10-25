@@ -171,7 +171,10 @@ jobs:
           go-version: "1.23"
 
       - name: Go tests (pure backend, no cabi built)
-        run: go test -v -run '^(TestPure|TestProbe|TestBridge|TestCorpusManifest|TestLoadCorpusManifest|TestReadFixtureSource|TestWriter|TestDumpsForceStringsPreservesNonFiniteFloatText|TestInvalidUTF8|TestLineOfOffset|TestFirstInvalidUTF8|TestReadme|TestSpec09)' ./...
+        # TestSpec09* is requireCabi-gated (native leg) and stays in the
+        # native matrix; the PURE side of expected_location is covered by
+        # TestPureCorpusInvalid, which runs all invalid fixtures here.
+        run: go test -v -run '^(TestPure|TestProbe|TestBridge|TestCorpusManifest|TestLoadCorpusManifest|TestReadFixtureSource|TestWriter|TestDumpsForceStringsPreservesNonFiniteFloatText|TestInvalidUTF8|TestLineOfOffset|TestFirstInvalidUTF8|TestReadme)' ./...
 
       - name: Engine and pure package tests (all engine tests)
         run: go test -v ./internal/engine ./pure

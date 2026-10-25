@@ -189,26 +189,21 @@ func TestEditValueNativePureParity(t *testing.T) {
 		}
 	})
 
-	// Transport strictness parity: a replacement string holding an
-	// unpaired surrogate marshals to a \ud800 escape the native
-	// (serde_json) transport rejects; the pure seam must produce the
-	// same source-less Message class, never a silently normalised value.
-	t.Run("err/unpaired-surrogate-replacement", func(t *testing.T) {
-		repl := string(rune(0xD800)) + "x"
-		_, nerr := native.EditValue("a: 1\n", "a", repl)
-		_, perr := pureOps.EditValue("a: 1\n", "a", repl)
-		if nerr == nil || perr == nil {
-			t.Fatalf("expected transport errors, got native=%v pure=%v", nerr, perr)
+	// A Go string cannot hold an unpaired surrogate: string(rune(0xD800))
+	// yields the VALID U+FFFD replacement character before the API is
+	// called, so the public API must ACCEPT it on both backends and
+	// produce identical bytes. (Raw invalid-surrogate wire JSON remains
+	// a Message — that path is covered by the byte-seam tests.)
+	t.Run("ok/replacement-character", func(t *testing.T) {
+		repl := string(rune(0xD800)) + "x" // U+FFFD + "x"
+		gotNative, nerr := native.EditValue("a: 1\n", "a", repl)
+		gotPure, perr := pureOps.EditValue("a: 1\n", "a", repl)
+		if nerr != nil || perr != nil {
+			t.Fatalf("unexpected errors: native=%v pure=%v", nerr, perr)
 		}
-		var ne, pe *ktav.Error
-		if !asKtavError(nerr, &ne) || !asKtavError(perr, &pe) {
-			t.Fatalf("errors are not *ktav.Error: %T / %T", nerr, perr)
-		}
-		if ne.Class != "Message" || pe.Class != "Message" {
-			t.Fatalf("transport class divergence: native=%s pure=%s, want Message", ne.Class, pe.Class)
-		}
-		if ne.Line != 0 || pe.Line != 0 {
-			t.Fatalf("transport errors must be source-less: native line=%d pure line=%d", ne.Line, pe.Line)
+		want := "a: \uFFFDx\n"
+		if gotNative != want || gotPure != want {
+			t.Fatalf("output divergence\nwant:   %q\nnative: %q\npure:   %q", want, gotNative, gotPure)
 		}
 	})
 }

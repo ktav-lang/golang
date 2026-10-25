@@ -264,6 +264,24 @@ func isCompoundRoot(v any) bool {
 	}
 }
 
+// encodeEditReplacementTagged is the edit-engine's Go→wire encoder: the
+// SAME numeric tagging and prepare pass as encodeWriterTagged, but
+// WITHOUT the document-root restriction — edit replacements may be bare
+// scalars (the contract explicitly allows scalar replacement; only the
+// dumps family requires an Object/Array root, and that guard stays
+// there). Empty key names and non-finite floats are still rejected.
+func encodeEditReplacementTagged(v any) ([]byte, error) {
+	value, err := toTagged(v)
+	if err != nil {
+		return nil, err
+	}
+	value, err = prepareWriterValue(value, nil, false)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(value)
+}
+
 // prepareWriterValue walks the tagged tree iteratively (explicit frame
 // stack), coercing non-finite float payloads per forceStrings and
 // rejecting empty key names with the full dotted path. A single shared

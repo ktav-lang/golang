@@ -33,6 +33,12 @@ import (
 // ktav_version() string says.
 const LibVersion = "0.8.1"
 
+// CoreVersion is the ktav core version the workspace cabi is pinned to
+// (0.9.0 from the parent-approved git pin); it is what ktav_version()
+// reports. Diagnostics/provenance only — the ABI gate above is what
+// refuses incompatible artifacts.
+const CoreVersion = "0.9.0"
+
 // ExpectedABIVersion is the exported C ABI shape this module was
 // compiled against: the ktav_* symbol set, their signatures and the
 // error encoding. Bumped 1 → 2 (user-approved, 2026-10-25) when the two

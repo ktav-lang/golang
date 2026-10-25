@@ -225,11 +225,18 @@ func TestConformanceInvalid(t *testing.T) {
 			if err != nil {
 				t.Fatalf("oracle missing: %v", err)
 			}
-			if _, err := ktav.Loads(string(src)); err == nil {
+			// Keep the PARSE error in its own variable: an `else if
+			// err := ...` would shadow it, and the next check would
+			// receive the previous assertion's nil instead of the
+			// parse error.
+			_, parseErr := ktav.Loads(string(src))
+			if parseErr == nil {
 				t.Fatalf("expected parse error, got ok\n---\n%s", src)
-			} else if err := assertInvalidOracleError(err, oracleRaw); err != nil {
+			}
+			if err := assertInvalidOracleError(parseErr, oracleRaw); err != nil {
 				t.Fatal(err)
-			} else if err := assertExpectedLocation(err, src, oracleRaw); err != nil {
+			}
+			if err := assertExpectedLocation(parseErr, src, oracleRaw); err != nil {
 				t.Fatal(err)
 			}
 		})

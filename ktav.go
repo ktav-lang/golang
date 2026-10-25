@@ -150,7 +150,10 @@ func canonicalFromSourceVia(vt *backendVTable, src string) (string, error) {
 }
 
 func editValueVia(vt *backendVTable, src, textualPath string, replacement any) (string, error) {
-	wire, err := engine.EncodeWriterTagged(replacement, false)
+	// Edit replacements are NOT restricted to a document root (scalar
+	// replacement is allowed); the dumps-family ScalarRoot guard does
+	// not apply here.
+	wire, err := engine.EncodeEditReplacementTagged(replacement)
 	if err != nil {
 		return "", err
 	}
@@ -162,7 +165,8 @@ func editValueVia(vt *backendVTable, src, textualPath string, replacement any) (
 }
 
 func editValueSegmentsVia(vt *backendVTable, src string, segments []string, replacement any) (string, error) {
-	wire, err := engine.EncodeWriterTagged(replacement, false)
+	// Scalar roots allowed (see editValueVia).
+	wire, err := engine.EncodeEditReplacementTagged(replacement)
 	if err != nil {
 		return "", err
 	}

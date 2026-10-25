@@ -257,7 +257,7 @@ func (p *parser) finish(eofOffset int) (any, *Error) {
 		if p.hasMultilineOpener {
 			start = p.multilineOpener
 		}
-		return nil, errUnclosedCompound("multiline", kspan{start, eofOffset})
+		return nil, errUnclosedCompound(p.src, "multiline", kspan{start, eofOffset})
 	}
 	if len(p.stack) > 1 || (p.rootIsExplicitCompound && !p.rootConsumed) {
 		kind := "object"
@@ -265,7 +265,7 @@ func (p *parser) finish(eofOffset int) (any, *Error) {
 			kind = "array"
 		}
 		start := p.openerOffsets[len(p.openerOffsets)-1]
-		return nil, errUnclosedCompound(kind, kspan{start, eofOffset})
+		return nil, errUnclosedCompound(p.src, kind, kspan{start, eofOffset})
 	}
 	if p.trivia {
 		eofTrivia := trimTrailingBlanks(p.pendingTrivia)

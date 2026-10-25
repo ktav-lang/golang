@@ -42,7 +42,7 @@ func editCheck(t *testing.T, source string, path []string, replacement any, expe
 		t.Fatalf("test bug: source does not parse: %v", err)
 	}
 	want := wantDoc.(*pvalue)
-	wireRepl, werr := encodeWriterTagged(replacement, false)
+	wireRepl, werr := encodeEditReplacementTagged(replacement)
 	if werr != nil {
 		t.Fatalf("test bug: replacement not encodable: %v", werr)
 	}

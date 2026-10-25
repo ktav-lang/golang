@@ -52,10 +52,19 @@ func PureEditValueSegments(src, path, replacement []byte) ([]byte, error) {
 	return pureEditValueSegmentsBytes(src, path, replacement)
 }
 
+// EncodeEditReplacementTagged encodes an edit replacement (any value,
+// scalars allowed) into the tagged wire JSON WITHOUT the dumps-family
+// document-root restriction. Used by the native-backed root package's
+// EditValue/EditValueSegments.
+func EncodeEditReplacementTagged(v any) ([]byte, error) {
+	return encodeEditReplacementTagged(v)
+}
+
 // editWireReplacement converts a host Go value into the tagged wire JSON
-// the edit seams consume (same numeric wire as Dumps).
+// the edit seams consume (same numeric wire as Dumps, scalar roots
+// allowed).
 func editWireReplacement(replacement any) ([]byte, error) {
-	return encodeWriterTagged(replacement, false)
+	return encodeEditReplacementTagged(replacement)
 }
 
 func editPublic(src, textualPath string, replacement any) (string, error) {
