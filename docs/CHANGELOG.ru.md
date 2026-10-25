@@ -15,6 +15,25 @@ bump MINOR считается ломающим.
 
 ### Добавлено
 
+- Правка исходника (0.9): `EditValue(src, path, replacement)` и
+  `EditValueSegments(src, segments, replacement)` сплайсят ровно
+  байтовый диапазон цели внутри исходного текста — комментарии,
+  написание ключей, dotted/inline/block-формы, BOM и байты
+  CR/LF/CRLF/EOF вне правки сохраняются; no-op-замены байт-в-байт
+  идентичны исходнику; inline-предки раскрываются минимально, когда
+  требует читаемость. Новые классы ошибок `EditInvalidPath` /
+  `EditNotFound` / `EditUnsupported` несут только `message` и `body`
+  (UTF-8 byte-офсет или причина). Native и pure бэкенды совпадают
+  байт-в-байт; в `pure` добавлены те же две точки входа.
+- C ABI пополнили `ktav_edit_value` / `ktav_edit_value_segments`;
+  загрузчик теперь проверяет `ktav_abi_version()` == 2 (одобренный
+  пользователем подъём с 1) и отклоняет старые библиотеки понятной
+  ошибкой версии — никогда не подменяя их тихим pure-fallback.
+  Версии пакетов не менялись.
+- Подключён корпус спецификации 0.9 (412 фикстур; invalid вырос до 162
+  за счёт 72 новых diagnostics09 — EOF + malformed UTF-8) с
+  fixture-driven regression-runner, проверяющим `expected_location`
+  (line, raw-byte start, точный end или minimum_end) на обоих бэкендах.
 - `pure` — отдельный пакет только со стандартной библиотекой: `import "github.com/ktav-lang/golang/pure"`; функции пакета и `pure.New()` предоставляют все восемь операций и псевдонимы `Error`/`Span`. Совместимый API `BackendPure` корневого пакета сохранён, но импорт корневого модуля сохраняет native-зависимости `purego` и `x/sys`.
 - Нативное ядро обновлено до опубликованного Rust `ktav` 0.8.1 со спецификацией 0.8.1 и всеми пятью категориями корпуса (valid, invalid, unrepresentable, parseable-unrepresentable, strict-lossy).
 - CI-задача упакованного pure-потребителя прогоняет весь корпус конформности 0.8 через установленный артефакт `/pure` с `CGO_ENABLED=0` и с перехваченными на `PATH` `rustc`/`cargo`, в дополнение к файловому proxy, readonly-режиму и белому списку импортов.

@@ -17,7 +17,7 @@ jobs:
   # ------------------------------------------------------------------
   # Build native library + run Go tests in one job per OS. The test
   # suite hardcodes both paths (cabi at `target/release/...`, spec at
-  # `spec/versions/0.8/tests`) — no env wiring needed.
+  # `spec/versions/0.9/tests`) — no env wiring needed.
   # ------------------------------------------------------------------
   test:
     name: ${{ matrix.os }} / Go ${{ matrix.go }}
@@ -37,10 +37,10 @@ jobs:
         with:
           submodules: recursive
 
-      - name: Pin spec submodule to 0.8.1
+      - name: Pin spec submodule to 0.9 (source-edit / diagnostics 0.9)
         run: |
-          git -C spec fetch --depth 1 origin 388982118c0d8f767bf283356ac9c9bb50fdc3f5
-          git -C spec checkout --detach 388982118c0d8f767bf283356ac9c9bb50fdc3f5
+          git -C spec fetch --depth 1 origin a45275688557dc9ecc24a82afb491dd46e615d4d
+          git -C spec checkout --detach a45275688557dc9ecc24a82afb491dd46e615d4d
 
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
@@ -49,49 +49,47 @@ jobs:
         with:
           go-version: ${{ matrix.go }}
 
-      # Provenance: prove the RESOLVED core is the published Rust
-      # ktav 0.8.1. Order matters: resolve the lock FIRST (Cargo.lock is
-      # gitignored in this repo), VERIFY it against the published
-      # artifact, then build --locked so compilation is proven to use
-      # exactly the verified resolution. Cargo.lock is parsed with an
-      # awk state machine over [[package]] blocks (version AND checksum
-      # AND source of the ktav entry); the crates.io sparse index is
-      # JSONL (one object per line with `vers` and `cksum`) — jq selects
-      # the 0.8.1 line's cksum. All three values must agree or the job
-      # fails.
-      - name: Resolve and verify ktav core version and checksum
+      # Provenance: prove the RESOLVED core is the pinned git core 0.9.0
+      # at the exact parent-approved revision. Order matters: resolve the
+      # lock FIRST (Cargo.lock is gitignored in this repo), VERIFY it,
+      # then build --locked so compilation is proven to use exactly the
+      # verified resolution. The Cargo.lock ktav entry must be EXACTLY
+      # version 0.9.0 with the full git source including the resolved
+      # checkout SHA (rev AND #SHA), and cargo metadata --locked must
+      # independently resolve exactly ONE ktav package at the same
+      # version/source. Any mismatch fails the job.
+      - name: Resolve and verify ktav core version and git revision
         shell: bash
         run: |
           set -euo pipefail
           cargo generate-lockfile
-          want_ver="0.8.1"
-          want_cksum="7140dfe2fa6c320e74768cd6a637828c2d26f81746254f4fcd805f3993bd3fd5"
+          want_ver="0.9.0"
+          want_src='git+https://github.com/ktav-lang/rust?rev=447a00bd012e8d3f347c7e1eb59c3f0d9a78332f#447a00bd012e8d3f347c7e1eb59c3f0d9a78332f'
           lock_ver="$(awk -F'"' '
             /^[[:space:]]*\[\[package\]\]/ { inktav=0 }
             /^[[:space:]]*name = "ktav"$/ { inktav=1 }
             inktav && /^[[:space:]]*version = / { print $2; exit }
-          ' Cargo.lock)"
-          lock_cksum="$(awk -F'"' '
-            /^[[:space:]]*\[\[package\]\]/ { inktav=0 }
-            /^[[:space:]]*name = "ktav"$/ { inktav=1 }
-            inktav && /^[[:space:]]*checksum = / { print $2; exit }
           ' Cargo.lock)"
           lock_src="$(awk -F'"' '
             /^[[:space:]]*\[\[package\]\]/ { inktav=0 }
             /^[[:space:]]*name = "ktav"$/ { inktav=1 }
             inktav && /^[[:space:]]*source = / { print $2; exit }
           ' Cargo.lock)"
-          echo "Cargo.lock resolves ktav ${lock_ver} cksum ${lock_cksum} src ${lock_src}"
-          test "$lock_ver" = "$want_ver" || { echo "lock version mismatch"; exit 1; }
-          test "$lock_cksum" = "$want_cksum" || { echo "lock checksum mismatch"; exit 1; }
-          case "$lock_src" in
-            registry+https://github.com/rust-lang/crates.io-index*) ;;
-            *) echo "lock source is not the crates.io registry: $lock_src"; exit 1 ;;
-          esac
-          got="$(curl -fsSL https://index.crates.io/kt/av/ktav | jq -r 'select(.vers=="0.8.1") | .cksum' | head -n1)"
-          test -n "$got" || { echo "sparse index has no ktav 0.8.1 line"; exit 1; }
-          echo "crates.io cksum = ${got}"
-          test "$got" = "$want_cksum" || { echo "checksum mismatch: ktav 0.8.1 provenance unproven"; exit 1; }
+          echo "Cargo.lock resolves ktav ${lock_ver} src ${lock_src}"
+          test "$lock_ver" = "$want_ver" || { echo "lock version mismatch: $lock_ver"; exit 1; }
+          test "$lock_src" = "$want_src" || { echo "lock source mismatch (want exact git source incl. resolved SHA): $lock_src"; exit 1; }
+          # Independent resolution check: cargo metadata --locked must
+          # resolve EXACTLY ONE ktav package, at the same version and the
+          # same full git source (rejects a stale or hand-edited lockfile
+          # that no longer matches the manifest).
+          meta_json="$(cargo metadata --locked --format-version 1)"
+          ktav_count="$(printf '%s' "$meta_json" | jq '[.packages[] | select(.name == "ktav")] | length')"
+          test "$ktav_count" = "1" || { echo "cargo metadata resolved ${ktav_count} ktav packages, want exactly 1"; exit 1; }
+          meta_ver="$(printf '%s' "$meta_json" | jq -r '.packages[] | select(.name == "ktav") | .version')"
+          meta_src="$(printf '%s' "$meta_json" | jq -r '.packages[] | select(.name == "ktav") | .source')"
+          test "$meta_ver" = "$want_ver" || { echo "metadata version mismatch: $meta_ver"; exit 1; }
+          test "$meta_src" = "$want_src" || { echo "metadata source mismatch (want exact git source incl. resolved SHA): $meta_src"; exit 1; }
+          echo "provenance OK: ktav ${meta_ver} @ ${meta_src}"
 
       - name: Build native library (locked to the verified lockfile)
         run: cargo build --release --locked -p ktav-cabi
@@ -116,10 +114,10 @@ jobs:
         with:
           submodules: recursive
 
-      - name: Pin spec submodule to 0.8.1
+      - name: Pin spec submodule to 0.9 (source-edit / diagnostics 0.9)
         run: |
-          git -C spec fetch --depth 1 origin 388982118c0d8f767bf283356ac9c9bb50fdc3f5
-          git -C spec checkout --detach 388982118c0d8f767bf283356ac9c9bb50fdc3f5
+          git -C spec fetch --depth 1 origin a45275688557dc9ecc24a82afb491dd46e615d4d
+          git -C spec checkout --detach a45275688557dc9ecc24a82afb491dd46e615d4d
 
       - uses: dtolnay/rust-toolchain@stable
       # Distinct cache key: debug artifacts must not collide with the
@@ -163,17 +161,17 @@ jobs:
         with:
           submodules: recursive
 
-      - name: Pin spec submodule to 0.8.1
+      - name: Pin spec submodule to 0.9 (source-edit / diagnostics 0.9)
         run: |
-          git -C spec fetch --depth 1 origin 388982118c0d8f767bf283356ac9c9bb50fdc3f5
-          git -C spec checkout --detach 388982118c0d8f767bf283356ac9c9bb50fdc3f5
+          git -C spec fetch --depth 1 origin a45275688557dc9ecc24a82afb491dd46e615d4d
+          git -C spec checkout --detach a45275688557dc9ecc24a82afb491dd46e615d4d
 
       - uses: actions/setup-go@v5
         with:
           go-version: "1.23"
 
       - name: Go tests (pure backend, no cabi built)
-        run: go test -v -run '^(TestPure|TestProbe|TestBridge|TestCorpusManifest|TestLoadCorpusManifest|TestReadFixtureSource|TestWriter|TestDumpsForceStringsPreservesNonFiniteFloatText|TestInvalidUTF8|TestLineOfOffset|TestFirstInvalidUTF8|TestReadme)' ./...
+        run: go test -v -run '^(TestPure|TestProbe|TestBridge|TestCorpusManifest|TestLoadCorpusManifest|TestReadFixtureSource|TestWriter|TestDumpsForceStringsPreservesNonFiniteFloatText|TestInvalidUTF8|TestLineOfOffset|TestFirstInvalidUTF8|TestReadme|TestSpec09)' ./...
 
       - name: Engine and pure package tests (all engine tests)
         run: go test -v ./internal/engine ./pure
@@ -193,10 +191,10 @@ jobs:
         with:
           submodules: recursive
 
-      - name: Pin spec submodule to 0.8.1
+      - name: Pin spec submodule to 0.9 (source-edit / diagnostics 0.9)
         run: |
-          git -C spec fetch --depth 1 origin 388982118c0d8f767bf283356ac9c9bb50fdc3f5
-          git -C spec checkout --detach 388982118c0d8f767bf283356ac9c9bb50fdc3f5
+          git -C spec fetch --depth 1 origin a45275688557dc9ecc24a82afb491dd46e615d4d
+          git -C spec checkout --detach a45275688557dc9ecc24a82afb491dd46e615d4d
 
       - uses: actions/setup-go@v5
         with:
@@ -258,7 +256,7 @@ jobs:
             printf '%s\n' "$imports" | grep -Fxq "$required" || { echo "missing expected dependency: $required"; exit 1; }
           done
           test ! -d target/debug && test ! -d target/release
-          go run ./consumer --spec "$GITHUB_WORKSPACE/spec/versions/0.8/tests"
+          go run ./consumer --spec "$GITHUB_WORKSPACE/spec/versions/0.9/tests"
           test ! -e "$work/rust-invoked.marker" || { echo "rust toolchain was invoked during pure consumer run"; cat "$work/rust-invoked.marker"; exit 1; }
 
   lint-rust:

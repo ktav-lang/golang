@@ -133,6 +133,8 @@ A complete runnable version lives in [`examples/basic`](examples/basic/main.go).
 | `EmitCanonical(v any) (string, error)` | Render a Go value as canonical Ktav (spec § 5.9). Go maps are encoded through `encoding/json`, which sorts string keys lexicographically. |
 | `CanonicalFromSource(src string) (string, error)` | Parse Ktav and immediately emit canonical form, preserving source key order. |
 | `FormatSource(src string) (string, error)` | Format Ktav source into its normalised spelling, **keeping every comment**. See below. |
+| `EditValue(src, path string, replacement any) (string, error)` | Replace the value addressed by the textual dotted path **in the source text** and return the patched source. See [Source editing](#source-editing). |
+| `EditValueSegments(src string, segments []string, replacement any) (string, error)` | Same, with pre-decoded literal segments (no extra unescaping). |
 
 ## Formatting — canonical spelling, comments kept
 
@@ -198,6 +200,68 @@ func isFixedPoint(src string) (bool, error) {
 
 Without comments or blank lines, the result equals `CanonicalFromSource`
 for the same text.
+
+> **Unreleased (0.9 preparation):** These editing APIs and updated diagnostics are not included in published 0.8.1 packages. Native backends require the pinned 0.9 core (C ABI 2 for C-FFI); pure backends remain standalone.
+
+## Source editing
+
+`EditValue` and `EditValueSegments` change one value **inside the source
+text** and return the patched source. This is not a parse → mutate →
+re-serialize round trip: only the target's byte range (plus, when
+readability demands it, the inline wrappers containing it) is spliced, so
+everything else survives byte-for-byte — comments, blank lines, key
+spelling, dotted/inline/block forms, the document's CR / LF / CRLF bytes,
+its BOM, and whether it ends with a newline.
+
+```go
+out, err := ktav.EditValue(src, "targets.storagehost.address", "10.0.0.9:22")
+// out == src with only that scalar's bytes replaced
+
+out, err := ktav.EditValueSegments(src, []string{"targets", "storagehost", "address"}, "10.0.0.9:22")
+```
+
+Path rules:
+
+- `EditValue` takes a textual path (`key1.key2.0.key4`). Inside a
+  segment `\.` is a literal dot and `\\` a literal backslash; any other
+  escape, a trailing lone backslash, or an empty segment is an
+  `*ktav.Error` with `Class == "EditInvalidPath"` whose `Body` is the
+  UTF-8 byte offset of the problem inside the path argument.
+- `EditValueSegments` takes pre-decoded literal segments — no additional
+  unescaping. A numeric segment is a string key inside an Object and a
+  zero-based ASCII-digit index inside an Array (leading zeros allowed,
+  signs are not indexes). An empty segment list is `"EditNotFound"`.
+- Only **replacement of an existing value** is supported: no create,
+  remove, or rename. A missing key, an out-of-bounds index, or descent
+  through a scalar is `"EditNotFound"`.
+
+Replacement values use the ordinary Go type mapping (`Dumps` accepts
+them, scalars included); a host integer never degrades to a float.
+
+Guarantees:
+
+- A no-op replacement (the new value equals the old one) returns the
+  source byte-identical, however noncanonical its spelling.
+- Marker transitions are minimal: switching a scalar to a numeric- or
+  keyword-like String toggles only the second `:` of the `::` marker,
+  and the original spacing around it is preserved.
+- Dotted, inline, and block forms are preserved, including a whole
+  inline container replacement and emptied-but-not-collapsed block
+  containers.
+- Inline ancestors expand to block form only when readability requires:
+  a multiline replacement string, growth beyond max(100 Unicode scalar
+  values, the old physical line length), or ≥ 4 inline escapes with ≥ 25%
+  overhead. Untouched nested branches stay inline; new block levels use
+  four spaces and the source EOL.
+- Errors of class `"EditUnsupported"` name pairs with no lossless
+  single-range patch: noncontiguous dotted-key/reopen targets, structural
+  replacement that would drop interior comment lines (leaf edits inside
+  such containers still work and keep the comments), strings containing
+  CR or a line equal to `))`.
+- Every successful patch is re-parsed and semantically verified before
+  it is returned, so silent corruption is impossible.
+- The native (C ABI) and pure-Go backends agree byte-for-byte; both are
+  exercised against the same regression corpus.
 
 ## Structured errors
 

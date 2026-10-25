@@ -14,6 +14,20 @@ MINOR 递进视为破坏性变更。
 
 ### 新增
 
+- 源码编辑（0.9）：`EditValue(src, path, replacement)` 与
+  `EditValueSegments(src, segments, replacement)` 在源文本内只拼接目标值
+  的字节区间 —— 编辑区外的注释、键写法、dotted/inline/block 形式、BOM
+  和 CR/LF/CRLF/EOF 字节全部保留；no-op 替换逐字节等同源码；内联祖先在
+  可读性需要时最小化展开。新增 `EditInvalidPath` / `EditNotFound` /
+  `EditUnsupported` 错误类，仅携带 `message` 与 `body`（UTF-8 字节偏移或
+  原因）。Native 与纯 Go 后端逐字节一致；`pure` 同样获得这两个入口。
+- C ABI 新增 `ktav_edit_value` / `ktav_edit_value_segments`；加载器现在
+  以 `ktav_abi_version()` == 2 为门禁（经用户批准从 1 升级），以清晰的
+  版本错误拒绝旧库 —— 绝不静默回退到 pure。包版本未变。
+- 接入规范 0.9 语料（412 个夹具；invalid 增至 162，含 72 个新的
+  diagnostics09 EOF + 非法 UTF-8 用例），并新增以夹具驱动的回归运行器，
+  在两个后端上验证 `expected_location`（line、原始字节 start、精确 end
+  或 minimum_end）。
 - `pure` 是独立的仅标准库包：`import "github.com/ktav-lang/golang/pure"`；包级函数和 `pure.New()` 提供全部八项操作及 `Error`/`Span` 别名。根包的兼容 `BackendPure` API 保留，但导入根模块仍会带入 native 依赖 `purego` 和 `x/sys`。
 - 原生核心升级到已发布的 Rust `ktav` 0.8.1，配套规范 0.8.1，覆盖全部五类语料（valid、invalid、unrepresentable、parseable-unrepresentable、strict-lossy）。
 - 打包 pure 消费者的 CI 任务在仅文件代理、readonly 模式和导入白名单之外，还通过已安装的 `/pure` 产物运行完整的 0.8 一致性语料，使用 `CGO_ENABLED=0` 并在 `PATH` 上拦截 `rustc`/`cargo`。

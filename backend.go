@@ -16,6 +16,14 @@ func enginePureCanonicalFromSource(b []byte) ([]byte, error) {
 	return engine.PureCanonicalFromSource(b)
 }
 
+func enginePureEditValue(src, path, replacement []byte) ([]byte, error) {
+	return engine.PureEditValue(src, path, replacement)
+}
+
+func enginePureEditValueSegments(src, path, replacement []byte) ([]byte, error) {
+	return engine.PureEditValueSegments(src, path, replacement)
+}
+
 // Backend selects which implementation backs the package's public
 // operations.
 //
@@ -48,6 +56,8 @@ type backendVTable struct {
 	emitCanonical     func(src []byte) ([]byte, error)
 	formatSource      func(src []byte) ([]byte, error)
 	canonicalFromSrc  func(src []byte) ([]byte, error)
+	editValue         func(src, path, replacement []byte) ([]byte, error)
+	editValueSegments func(src, path, replacement []byte) ([]byte, error)
 }
 
 func nativeVTable() *backendVTable {
@@ -59,6 +69,8 @@ func nativeVTable() *backendVTable {
 		emitCanonical:     emitCanonicalJSON,
 		formatSource:      formatSource,
 		canonicalFromSrc:  canonicalFromSourceJSON,
+		editValue:         editValueNative,
+		editValueSegments: editValueSegmentsNative,
 	}
 }
 
@@ -71,6 +83,8 @@ func pureVTable() *backendVTable {
 		emitCanonical:     enginePureEmitCanonical,
 		formatSource:      enginePureFormatSource,
 		canonicalFromSrc:  enginePureCanonicalFromSource,
+		editValue:         enginePureEditValue,
+		editValueSegments: enginePureEditValueSegments,
 	}
 }
 

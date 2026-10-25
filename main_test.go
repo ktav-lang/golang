@@ -17,11 +17,11 @@ import (
 // build into the same workspace.
 const (
 	cabiBuildDir = "target/release"
-	specTestsDir = "spec/versions/0.8/tests"
+	specTestsDir = "spec/versions/0.9/tests"
 )
 
 func TestMain(m *testing.M) {
-	if err := validateSpec08Corpus(specTestsDir); err != nil {
+	if err := validateSpec09Corpus(specTestsDir); err != nil {
 		fmt.Fprintf(os.Stderr, "conformance corpus guard failed: %v\n", err)
 		os.Exit(1)
 	}

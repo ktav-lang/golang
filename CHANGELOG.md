@@ -15,6 +15,24 @@ itself — for the latter see
 
 ### Added
 
+- Source editing (0.9): `EditValue(src, path, replacement)` and
+  `EditValueSegments(src, segments, replacement)` splice exactly the
+  target's byte range inside the source text — comments, key spelling,
+  dotted/inline/block forms, BOM and CR/LF/CRLF/EOF bytes outside the
+  edit survive; no-op replacements are byte-identical; inline ancestors
+  expand minimally when readability requires. New `EditInvalidPath` /
+  `EditNotFound` / `EditUnsupported` error classes carry only `message`
+  and `body` (the UTF-8 byte offset or the reason). Native and pure
+  backends agree byte-for-byte; `pure` gains the same two entry points.
+- The C ABI grows `ktav_edit_value` / `ktav_edit_value_segments`; the
+  loader now gates on `ktav_abi_version()` == 2 (user-approved bump
+  from 1) and refuses older libraries with a clear version error —
+  never a silent pure fallback. Package versions are unchanged.
+- Spec 0.9 corpus (412 fixtures; invalid grew to 162 with 72 new
+  diagnostics09 EOF + malformed-UTF-8 cases) is wired in with a
+  fixture-driven regression runner validating `expected_location`
+  (line, raw-byte start, exact end or minimum_end) on both backends,
+  native and pure.
 - `pure` is a separate stdlib-only package: `import "github.com/ktav-lang/golang/pure"`; package functions and `pure.New()` expose all eight operations and `Error`/`Span` aliases. The legacy root `BackendPure` API remains, but importing the root module retains its native `purego` and `x/sys` dependencies.
 - The native core is upgraded to the published Rust `ktav` 0.8.1 with spec 0.8.1, covering all five corpus categories (valid, invalid, unrepresentable, parseable-unrepresentable, strict-lossy).
 - The packaged pure consumer CI job runs the entire 0.8 conformance corpus through the installed `/pure` artifact with `CGO_ENABLED=0` and with `rustc`/`cargo` trapped on `PATH`, in addition to the file-only proxy, readonly mode, and import whitelist.

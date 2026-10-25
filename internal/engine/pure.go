@@ -206,7 +206,14 @@ func messageErr(msg string) *Error {
 // stack. encoding/json's Decoder.Token is itself a flat state machine
 // (no per-nesting-level recursion), so the whole path is stack-bounded
 // by this frame stack's heap allocation, not by goroutine stack growth.
-func ingestWire(src []byte) (*pvalue, *Error) {
+func ingestWire(src []byte) (*pvalue, *Error) { return ingestWireOpt(src, false) }
+
+// ingestWireValue is the edit-engine's wire ingest: the tagged transport
+// may also be a bare scalar (edit replacements are not restricted to
+// top-level documents).
+func ingestWireValue(src []byte) (*pvalue, *Error) { return ingestWireOpt(src, true) }
+
+func ingestWireOpt(src []byte, allowScalar bool) (*pvalue, *Error) {
 	dec := json.NewDecoder(bytes.NewReader(src))
 	dec.UseNumber()
 
@@ -334,7 +341,7 @@ func ingestWire(src []byte) (*pvalue, *Error) {
 	if _, err := dec.Token(); err == nil {
 		return nil, messageErr("input JSON: invalid character after top-level value")
 	}
-	if root.kind != kObj && root.kind != kArr {
+	if !allowScalar && root.kind != kObj && root.kind != kArr {
 		return nil, messageErr("top-level Ktav document must be an object or array")
 	}
 	return root, nil

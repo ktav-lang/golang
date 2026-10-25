@@ -5,6 +5,8 @@ export default [
   "quick-start-build",
   "api",
   "formatting",
+  "source-edit-status",
+  "editing",
   "errors",
   "errors-notes",
   "type-mapping",

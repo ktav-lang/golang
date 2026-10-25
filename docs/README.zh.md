@@ -133,6 +133,8 @@ fmt.Print(out)
 | `EmitCanonical(v any) (string, error)` | 把 Go 值渲染为规范 Ktav(spec § 5.9)。`encoding/json` 会按字典序排列 Go map 的字符串键。 |
 | `CanonicalFromSource(src string) (string, error)` | 解析 Ktav 并立即输出规范形式，保留源文件的键顺序。 |
 | `FormatSource(src string) (string, error)` | 把 Ktav 源文本格式化为规范化写法，**保留全部注释**。见下文。 |
+| `EditValue(src, path string, replacement any) (string, error)` | 按文本点分路径**在源文本中**替换值，返回修改后的源码。见[源码编辑](#源码编辑)。 |
+| `EditValueSegments(src string, segments []string, replacement any) (string, error)` | 同上，但接受已解码的字面量段（不做额外反转义）。 |
 
 ## 格式化 —— 规范写法，保留注释
 
@@ -196,6 +198,55 @@ func isFixedPoint(src string) (bool, error) {
 ```
 
 没有注释和空行时，结果与同一文本的 `CanonicalFromSource` 相同。
+
+> **尚未发布（0.9 准备版本）：** 这些编辑 API 和更新后的诊断不包含在已发布的 0.8.1 包中。原生后端需要固定的 0.9 核心（C-FFI 使用 C ABI 2）；纯实现仍完全独立。
+
+## 源码编辑
+
+`EditValue` 与 `EditValueSegments` 直接**在源文本内部**修改一个值，并返回
+修改后的源码。这不是 parse → mutate → serialize 的全量重写：只有目标值的
+字节区间会被拼接替换（在可读性需要时，连同其所在的内联容器），其余部分
+逐字节保留 —— 注释、空行、键的写法、dotted/inline/block 形式、文档的
+CR / LF / CRLF 字节、BOM 以及末尾是否有换行。
+
+```go
+out, err := ktav.EditValue(src, "targets.storagehost.address", "10.0.0.9:22")
+// out == src，仅该标量的字节被替换
+
+out, err := ktav.EditValueSegments(src, []string{"targets", "storagehost", "address"}, "10.0.0.9:22")
+```
+
+路径规则：
+
+- `EditValue` 接受文本路径（`key1.key2.0.key4`）。段内 `\.` 表示字面量
+  点号，`\\` 表示字面量反斜杠；任何其他转义、结尾的孤立 `\` 或空段都会
+  得到 `Class == "EditInvalidPath"` 的 `*ktav.Error`，其 `Body` 是问题在
+  路径参数中的 UTF-8 字节偏移。
+- `EditValueSegments` 接受已解码的字面量段 —— 不做额外反转义。数字段在
+  Object 中是字符串键，在 Array 中是从零开始的 ASCII 数字索引（允许前导
+  零，不允许符号）。空段列表为 `"EditNotFound"`。
+- 仅支持**替换已有值**：没有 create、remove 或 rename。缺失键、越界索引
+  或穿过标量的下降都是 `"EditNotFound"`。
+
+替换值使用常规的 Go 类型映射（`Dumps` 接受的一切，包括标量）；宿主
+integer 绝不会退化为 float。
+
+保证：
+
+- no-op 替换（新值等于旧值）逐字节返回源码，无论其写法多么非规范。
+- 标记切换最小化：把标量换成数字形或关键字形 String 只切换 `::` 标记的
+  第二个 `:`，其周围的原始空格保持不变。
+- dotted、inline 与 block 形式均保留，包括整体替换内联容器，以及清空但
+  不折叠的 block 容器。
+- 仅在可读性需要时才把内联祖先展开为 block 形式：多行替换字符串、行长
+  超过 max(100 个 Unicode scalar values, 原物理行长)，或 ≥ 4 个内联转义
+  且开销 ≥ 25%。未触及的嵌套分支保持内联；新 block 层级使用四个空格和
+  源文件的 EOL。
+- `"EditUnsupported"` 类错误表示不存在无损单区间补丁：dotted-key/reopen
+  形成的不连续目标、会丢失内部注释行的结构性替换（此类容器内的叶编辑
+  仍可用且保留注释）、包含 CR 或等于 `))` 的行的字符串。
+- 每个成功补丁在返回前都会重新解析并做语义验证 —— 不可能悄悄损坏文档。
+- Native（C ABI）与纯 Go 后端逐字节一致；两者都针对同一回归语料运行。
 
 ## 结构化错误
 

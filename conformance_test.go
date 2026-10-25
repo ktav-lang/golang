@@ -229,6 +229,8 @@ func TestConformanceInvalid(t *testing.T) {
 				t.Fatalf("expected parse error, got ok\n---\n%s", src)
 			} else if err := assertInvalidOracleError(err, oracleRaw); err != nil {
 				t.Fatal(err)
+			} else if err := assertExpectedLocation(err, src, oracleRaw); err != nil {
+				t.Fatal(err)
 			}
 		})
 	}

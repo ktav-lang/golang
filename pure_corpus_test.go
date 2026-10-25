@@ -1,6 +1,6 @@
 package ktav_test
 
-// Phase 3: the full spec-0.8 conformance corpus executed SEPARATELY
+// Phase 3: the full spec-0.9 conformance corpus executed SEPARATELY
 // through BOTH backends. The pure legs run unconditionally — pure mode
 // must work without the native library ever being present — and the
 // native legs are exercised only when the cabi artifact is available.
@@ -103,8 +103,8 @@ func corpusFixturePaths(t *testing.T, category string) []string {
 	if len(cases) == 0 {
 		t.Fatalf("category %s: no fixtures found (missing corpus must fail, not skip)", category)
 	}
-	if len(cases) != spec08Counts[category] {
-		t.Fatalf("category %s: found %d fixtures, manifest pins %d", category, len(cases), spec08Counts[category])
+	if len(cases) != spec09Counts[category] {
+		t.Fatalf("category %s: found %d fixtures, manifest pins %d", category, len(cases), spec09Counts[category])
 	}
 	return cases
 }
@@ -267,6 +267,8 @@ func TestPureCorpusInvalid(t *testing.T) {
 				t.Fatalf("pure Loads: expected parse error, got ok\n---\n%s", src)
 			} else if err := assertInvalidOracleError(err, oracleRaw); err != nil {
 				t.Fatalf("pure error envelope mismatch: %v\n--- input ---\n%s", err, src)
+			} else if err := assertExpectedLocation(err, src, oracleRaw); err != nil {
+				t.Fatalf("pure expected_location mismatch: %v\n--- input ---\n%s", err, src)
 			}
 		})
 	}
@@ -291,8 +293,8 @@ func TestPureCorpusUnrepresentable(t *testing.T) {
 	if len(cases) == 0 {
 		t.Fatal("no unrepresentable fixtures found")
 	}
-	if len(cases) != spec08Counts["unrepresentable"] {
-		t.Fatalf("unrepresentable: found %d fixtures, manifest pins %d", len(cases), spec08Counts["unrepresentable"])
+	if len(cases) != spec09Counts["unrepresentable"] {
+		t.Fatalf("unrepresentable: found %d fixtures, manifest pins %d", len(cases), spec09Counts["unrepresentable"])
 	}
 
 	for _, p := range cases {

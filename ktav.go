@@ -149,6 +149,41 @@ func canonicalFromSourceVia(vt *backendVTable, src string) (string, error) {
 	return string(out), nil
 }
 
+func editValueVia(vt *backendVTable, src, textualPath string, replacement any) (string, error) {
+	wire, err := engine.EncodeWriterTagged(replacement, false)
+	if err != nil {
+		return "", err
+	}
+	out, err := vt.editValue([]byte(src), []byte(textualPath), wire)
+	if err != nil {
+		return "", err
+	}
+	return string(out), nil
+}
+
+func editValueSegmentsVia(vt *backendVTable, src string, segments []string, replacement any) (string, error) {
+	wire, err := engine.EncodeWriterTagged(replacement, false)
+	if err != nil {
+		return "", err
+	}
+	// A nil []string IS the empty path by contract (EditNotFound after
+	// source validation), so it must marshal to `[]`, not JSON null
+	// (which the native transport would reject as a Message). Non-nil
+	// slices marshal as-is; nothing is copied.
+	wirePath := []byte("[]")
+	if segments != nil {
+		wirePath, err = json.Marshal(segments)
+		if err != nil {
+			return "", engine.NewErrorf("ktav: path segments are not encodable: %v", err)
+		}
+	}
+	out, err := vt.editValueSegments([]byte(src), wirePath, wire)
+	if err != nil {
+		return "", err
+	}
+	return string(out), nil
+}
+
 // Loads parses a Ktav document and returns its Go representation (see
 // package doc for the mapping).
 func Loads(src string) (any, error) { return loadsVia(activeBackend(), src) }
@@ -219,6 +254,58 @@ func CanonicalFromSource(src string) (string, error) {
 	return canonicalFromSourceVia(activeBackend(), src)
 }
 
+// EditValue replaces the value addressed by textualPath in src with
+// replacement and returns the patched SOURCE TEXT — a lossless splice of
+// exactly the target's byte range, never a re-render of the document:
+//
+//	out, err := ktav.EditValue(src, "targets.storagehost.address", "10.0.0.1")
+//	out, err := ktav.EditValue(src, `list\.item.2`, []any{"a", "b"})
+//
+// The textual path splits on '.', with `\.` a literal dot and `\\` a
+// literal backslash; any other escape, a trailing lone backslash or an
+// empty segment is an *Error with Class "EditInvalidPath" whose Body is
+// the UTF-8 byte offset of the problem inside the path argument. A path
+// that does not address an existing value (missing key, non-numeric or
+// out-of-bounds array index, descent through a scalar, or an empty
+// segment list) is Class "EditNotFound". Replacement of an existing
+// value only: there is no create, remove or rename.
+//
+// replacement is any value Dumps accepts (the type mapping is the
+// package's), including scalars. The host scalar keeps its type:
+// arbitrary integers never degrade to floats.
+//
+// Dotted, inline and block forms are preserved, as are comments,
+// whitespace, key spelling, BOM, and the document's CR/LF/CRLF/EOF
+// bytes outside the effective edit. A no-op replacement (value equal to
+// the existing one) returns src byte-identical, however noncanonical
+// its spelling. An inline ancestor is expanded to block form only when
+// readability requires it (multiline replacement, line growth beyond
+// max(100 Unicode scalar values, the old physical line length), or ≥4
+// inline escapes with ≥25% overhead); new block levels use four spaces
+// and the source EOL.
+//
+// Errors of class "EditUnsupported" name a target/replacement pair with
+// no lossless single-range patch: noncontiguous dotted-key/reopen
+// targets, structural replacement that would drop interior comment
+// lines, strings containing CR or a line equal to '))'. On success the
+// patch has been re-parsed and semantically verified.
+//
+// EditValue dispatches through the active backend ([UseBackend]); the
+// native and pure implementations agree byte-for-byte.
+func EditValue(src, textualPath string, replacement any) (string, error) {
+	return editValueVia(activeBackend(), src, textualPath, replacement)
+}
+
+// EditValueSegments is EditValue with pre-decoded literal segments: no
+// additional unescaping is performed (`[]string{"a.b"}` addresses the
+// key `a.b`, not the path `a\.b`). A numeric segment is a string key
+// inside an Object and a zero-based ASCII-digit index inside an Array
+// (leading zeros allowed, signs are not indexes). An empty segment list
+// is EditNotFound.
+func EditValueSegments(src string, segments []string, replacement any) (string, error) {
+	return editValueSegmentsVia(activeBackend(), src, segments, replacement)
+}
+
 // ─── per-instance operations (no global state) ───────────────────────
 
 // Loads parses a Ktav document and returns its Go representation,
@@ -257,4 +344,17 @@ func (o *Operations) FormatSource(src string) (string, error) { return formatSou
 // dispatching through this instance's backend only.
 func (o *Operations) CanonicalFromSource(src string) (string, error) {
 	return canonicalFromSourceVia(o.vt, src)
+}
+
+// EditValue replaces the value addressed by textualPath, dispatching
+// through this instance's backend only. See the package-level
+// [EditValue] for the full contract.
+func (o *Operations) EditValue(src, textualPath string, replacement any) (string, error) {
+	return editValueVia(o.vt, src, textualPath, replacement)
+}
+
+// EditValueSegments is EditValue with pre-decoded literal segments,
+// dispatching through this instance's backend only.
+func (o *Operations) EditValueSegments(src string, segments []string, replacement any) (string, error) {
+	return editValueSegmentsVia(o.vt, src, segments, replacement)
 }
