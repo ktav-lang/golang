@@ -84,7 +84,7 @@ func TestEditValueNativePureParity(t *testing.T) {
 			map[string]any{"y": int64(2)}, "EditUnsupported"},
 		{"CR replacement", "s: (\n hi\n)\n", "s", []string{"s"}, "a\r\nb", "EditUnsupported"},
 		{"terminator line", "s: (\n hi\n)\n", "s", []string{"s"}, "x\n))\ny", "EditUnsupported"},
-		{"malformed source", "a: {\n  x: 1\n", "a.x", []string{"a", "x"}, "v", "EditUnsupported"},
+		{"malformed source", "a: {\n  x: 1\n", "a.x", []string{"a", "x"}, "v", "UnclosedCompound"},
 	}
 	for _, c := range errorCases {
 		t.Run("err/"+c.name, func(t *testing.T) {

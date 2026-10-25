@@ -325,8 +325,22 @@ func TestEditNonNumericIndexIsNotFound(t *testing.T) {
 }
 
 func TestEditMalformedSourceIsUnsupportedNotPanic(t *testing.T) {
-	editCheckUnsupported(t, "a: {\n  x: 1\n", "a.x", "v")
-	editCheckUnsupported(t, "a: {\n", "missing", nil)
+	// Source validation comes FIRST: a malformed document surfaces the
+	// normal parser envelope (UnclosedCompound with opener line), on
+	// both backends — never a panic, never an invented EditUnsupported.
+	for _, source := range []string{"a: {\n  x: 1\n", "a: {\n"} {
+		_, err := op().EditValue(source, "missing", nil)
+		if err == nil {
+			t.Fatalf("expected the source parser error for %q, got ok", source)
+		}
+		e, ok := err.(*Error)
+		if !ok || e.Class != "UnclosedCompound" {
+			t.Fatalf("want the parser envelope (UnclosedCompound), got %#v", err)
+		}
+		if e.Line < 1 {
+			t.Fatalf("UnclosedCompound must carry the opener line, got %#v", e)
+		}
+	}
 }
 
 func TestEditLeadingZeroIndexAndSigns(t *testing.T) {
@@ -434,7 +448,10 @@ func TestEditCompoundWithMultilineStringRoundTrips(t *testing.T) {
 // ─── physical inline context lives on the leaf ────────────────────────
 
 func TestEditDottedKeyInsideInlineEscapes(t *testing.T) {
-	editCheck(t, "a: {b.c: old}\n", []string{"a", "b.c"}, "y,z",
+	// Inline pair keys are dotted-expanded by the parser (a → b → c),
+	// and the leaf keeps a real slot: the splice replaces exactly the
+	// body bytes inside the inline braces (Rust: edit_value "a.b.c").
+	editCheck(t, "a: {b.c: old}\n", []string{"a", "b", "c"}, "y,z",
 		"a: {b.c: y\\,z}\n")
 }
 
@@ -877,6 +894,42 @@ func TestEditConsumerSmokeIntReplacement(t *testing.T) {
 	got, err = op().EditValueSegments(src, []string{"a"}, int64(2))
 	if err != nil || got != want {
 		t.Fatalf("EditValueSegments = %q, %v; want %q", got, err, want)
+	}
+}
+
+// Извлечение значения из свежего дерева обнуляет только целевой слот.
+func TestEditVerificationTakeOnFreshParse(t *testing.T) {
+	doc, _, perr := parseDoc("k: v\nnested: {x: 1}\nlist: [one, two]\n", false, false)
+	if perr != nil {
+		t.Fatalf("parse: %v", perr)
+	}
+	root := doc.(*pvalue)
+
+	got, terr := editTakeTarget(root, []string{"k"})
+	if terr != nil {
+		t.Fatalf("take k: %v", terr)
+	}
+	if got.kind != kStr || got.s != "v" {
+		t.Fatalf("take k = %#v, want String \"v\"", got)
+	}
+	if slot := root.obj.get("k"); slot == nil || slot.kind != kNull {
+		t.Fatalf("k slot after take = %#v, want null", slot)
+	}
+
+	got, terr = editTakeTarget(root, []string{"nested", "x"})
+	if terr != nil {
+		t.Fatalf("take nested.x: %v", terr)
+	}
+	if got.kind != kInt || got.s != "1" {
+		t.Fatalf("take nested.x = %#v, want Integer 1", got)
+	}
+
+	got, terr = editTakeTarget(root, []string{"list", "1"})
+	if terr != nil {
+		t.Fatalf("take list.1: %v", terr)
+	}
+	if got.kind != kStr || got.s != "two" {
+		t.Fatalf("take list.1 = %#v, want String \"two\"", got)
 	}
 }
 

@@ -583,15 +583,12 @@ func positionInline(body string, baseAbs, lineNum int, span kspan, isObject bool
 				node.slot = &editSlot{kind: slotPair, colon: colonAbs, b0: valueAbs, b1: segEnd}
 			}
 			rawKey := key
-			// Inline keys are § 5.8-trimmed and escape-decoded like the
-			// real inline parser.
-			keyTrimmed := trimInline(rawKey)
-			decoded, bad := decodeInlineKey(keyTrimmed)
-			if bad != "" {
-				return nil, fmt.Errorf("bad inline key escape")
-			}
-			if !table.insert(decoded, node) {
-				return nil, fmt.Errorf("duplicate inline key")
+			// Inline keys go through the SAME dotted expansion and
+			// decoding as the parser's insertValue, so the edit tree's
+			// shape matches the parsed tree (`{b.c: old}` nests b→c
+			// with the slot on the leaf, exactly like the reference).
+			if ierr := editInsertValue(table, rawKey, node); ierr != nil {
+				return nil, fmt.Errorf("inline insert: %v", ierr)
 			}
 		}
 		return &editNode{kind: kObj, table: table, inline: true}, nil
@@ -628,13 +625,6 @@ func positionInlineChild(v string, vAbs, lineNum int, span kspan, depth int) (*e
 	default:
 		return &editNode{kind: kStr, inline: true}, nil
 	}
-}
-
-// decodeInlineKey decodes an inline pair key the way the inline parser
-// does: quoted keys unescape their body; bare keys take escapes § 3.7.
-// decodeKeySegment covers both spellings for well-formed input.
-func decodeInlineKey(raw string) (string, string) {
-	return decodeKeySegment(raw)
 }
 
 // ─── pvalue helpers ───────────────────────────────────────────────────

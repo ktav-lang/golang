@@ -194,8 +194,8 @@ func applyEdit(text string, original *pvalue, segments []string, repl *pvalue) (
 		return "", editUnsupported("patch produced an invalid document: " + vperr.Msg)
 	}
 	newTree := newDoc.(*pvalue)
-	actual, terr := editTakeTarget(newTree, segments)
-	if terr != nil {
+	actual, takeErr := editTakeTarget(newTree, segments)
+	if takeErr != nil {
 		return "", editUnsupported("semantic mismatch after splice: patched target not addressable")
 	}
 	targetMatches := pvEqual(actual, repl)
