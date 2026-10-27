@@ -47,6 +47,7 @@ package ktav
 
 import (
 	"encoding/json"
+	"unicode/utf8"
 
 	"github.com/ktav-lang/golang/internal/engine"
 )
@@ -171,17 +172,143 @@ func editValueSegmentsVia(vt *backendVTable, src string, segments []string, repl
 		return "", err
 	}
 	// A nil []string IS the empty path by contract (EditNotFound after
-	// source validation), so it must marshal to `[]`, not JSON null
-	// (which the native transport would reject as a Message). Non-nil
-	// slices marshal as-is; nothing is copied.
-	wirePath := []byte("[]")
-	if segments != nil {
-		wirePath, err = json.Marshal(segments)
-		if err != nil {
-			return "", engine.NewErrorf("ktav: path segments are not encodable: %v", err)
-		}
+	// source validation), so it must marshal to `[]`, not JSON null.
+	wirePath, err := marshalSegmentsWire(segments)
+	if err != nil {
+		return "", err
 	}
 	out, err := vt.editValueSegments([]byte(src), wirePath, wire)
+	if err != nil {
+		return "", err
+	}
+	return string(out), nil
+}
+
+// marshalSegmentsWire marshals pre-decoded path segments for the
+// segments-family wire: a nil []string IS the empty path by contract
+// and must marshal to `[]`, never JSON null (which the native transport
+// would reject as a Message).
+func marshalSegmentsWire(segments []string) ([]byte, error) {
+	wire := []byte("[]")
+	if segments != nil {
+		var err error
+		wire, err = json.Marshal(segments)
+		if err != nil {
+			return nil, engine.NewErrorf("ktav: path segments are not encodable: %v", err)
+		}
+	}
+	return wire, nil
+}
+
+func marshalStrictSegmentsWire(segments []string) ([]byte, error) {
+	for _, segment := range segments {
+		if !utf8.ValidString(segment) {
+			return nil, engine.TransportUTF8Error([]byte(segment))
+		}
+	}
+	return marshalSegmentsWire(segments)
+}
+
+func insertValueVia(vt *backendVTable, src, textualPath string, replacement any) (string, error) {
+	// Match the C ABI contract: source UTF-8 validation and parsing precede
+	// replacement transport encoding. Use the selected backend; never fall back.
+	if err := invalidUTF8Error(src); err != nil {
+		return "", err
+	}
+	if _, err := vt.loads([]byte(src)); err != nil {
+		return "", err
+	}
+	if _, err := engine.ValidateTextualEditPath([]byte(textualPath)); err != nil {
+		return "", err
+	}
+	// Insert replacements are NOT restricted to a document root (scalar
+	// replacement is allowed); the dumps-family ScalarRoot guard does
+	// not apply here.
+	wire, err := engine.EncodeEditReplacementTagged(replacement)
+	if err != nil {
+		return "", err
+	}
+	out, err := vt.insertValue([]byte(src), []byte(textualPath), wire)
+	if err != nil {
+		return "", err
+	}
+	return string(out), nil
+}
+
+func insertValueSegmentsVia(vt *backendVTable, src string, segments []string, replacement any) (string, error) {
+	if err := invalidUTF8Error(src); err != nil {
+		return "", err
+	}
+	if _, err := vt.loads([]byte(src)); err != nil {
+		return "", err
+	}
+	wirePath, err := marshalStrictSegmentsWire(segments)
+	if err != nil {
+		return "", err
+	}
+	if err = engine.ValidateLiteralEditSegments(segments); err != nil {
+		return "", err
+	}
+	// Scalar roots allowed (see insertValueVia).
+	wire, err := engine.EncodeEditReplacementTagged(replacement)
+	if err != nil {
+		return "", err
+	}
+	out, err := vt.insertValueSegments([]byte(src), wirePath, wire)
+	if err != nil {
+		return "", err
+	}
+	return string(out), nil
+}
+
+func removeValueVia(vt *backendVTable, src, textualPath string) (string, error) {
+	out, err := vt.removeValue([]byte(src), []byte(textualPath))
+	if err != nil {
+		return "", err
+	}
+	return string(out), nil
+}
+
+func removeValueSegmentsVia(vt *backendVTable, src string, segments []string) (string, error) {
+	if err := invalidUTF8Error(src); err != nil {
+		return "", err
+	}
+	if _, err := vt.loads([]byte(src)); err != nil {
+		return "", err
+	}
+	wirePath, err := marshalStrictSegmentsWire(segments)
+	if err != nil {
+		return "", err
+	}
+	out, err := vt.removeValueSegments([]byte(src), wirePath)
+	if err != nil {
+		return "", err
+	}
+	return string(out), nil
+}
+
+func renameKeyVia(vt *backendVTable, src, textualPath, newKey string) (string, error) {
+	// newKey is ONE literal key — passed as raw UTF-8 bytes, no JSON
+	// encoding, no path escaping.
+	out, err := vt.renameKey([]byte(src), []byte(textualPath), []byte(newKey))
+	if err != nil {
+		return "", err
+	}
+	return string(out), nil
+}
+
+func renameKeySegmentsVia(vt *backendVTable, src string, segments []string, newKey string) (string, error) {
+	if err := invalidUTF8Error(src); err != nil {
+		return "", err
+	}
+	if _, err := vt.loads([]byte(src)); err != nil {
+		return "", err
+	}
+	wirePath, err := marshalStrictSegmentsWire(segments)
+	if err != nil {
+		return "", err
+	}
+	out, err := vt.renameKeySegments([]byte(src), wirePath, []byte(newKey))
 	if err != nil {
 		return "", err
 	}
@@ -310,6 +437,99 @@ func EditValueSegments(src string, segments []string, replacement any) (string, 
 	return editValueSegmentsVia(activeBackend(), src, segments, replacement)
 }
 
+//	out, err := ktav.InsertValue(src, "targets.storagehost.address", "10.0.0.1")
+//	out, err := ktav.InsertValue(src, `list\.item.2`, []any{"a", "b"})
+//
+// The textual path splits on '.', with `\.` a literal dot and `\\` a
+// literal backslash; any other escape, a trailing lone backslash or an
+// empty segment is an *Error with Class "EditInvalidPath" whose Body is
+// the UTF-8 byte offset of the problem inside the path argument. The
+// LAST path segment is a NEW Object key: the parent is addressed by the
+// preceding segments and must be an Object. If the key already exists
+// the error class is "EditAlreadyExists"; a missing parent, descent
+// through a scalar, or a non-numeric/out-of-bounds array index is
+// "EditNotFound"; inserting into an Array (or any structural case with
+// no lossless single-range patch) is "EditUnsupported".
+//
+// replacement is any value Dumps accepts (the type mapping is the
+// package's), including scalars.
+//
+// Dotted, inline and block forms are preserved, as are comments,
+// whitespace, key spelling, BOM, and the document's CR/LF/CRLF/EOF
+// bytes outside the inserted range. The inserted pair is placed at the
+// end of the parent Object; empty ancestors are never pruned. On
+// success the patch has been re-parsed and semantically verified.
+func InsertValue(src, textualPath string, replacement any) (string, error) {
+	return insertValueVia(activeBackend(), src, textualPath, replacement)
+}
+
+// InsertValueSegments is InsertValue with pre-decoded literal segments:
+// no additional unescaping is performed (`[]string{"a.b"}` inserts the
+// key `a.b`, not the path `a\.b`). The last segment is the NEW Object
+// key; a numeric segment is a string key inside an Object and a
+// zero-based ASCII-digit index inside an Array (leading zeros allowed,
+// signs are not indexes). An empty segment list is EditNotFound.
+func InsertValueSegments(src string, segments []string, replacement any) (string, error) {
+	return insertValueSegmentsVia(activeBackend(), src, segments, replacement)
+}
+
+// RemoveValue deletes the value addressed by textualPath in src and
+// returns the patched SOURCE TEXT — a lossless splice removing exactly
+// the target's byte range (for an array element, its delimiter too),
+// never a re-render of the document:
+//
+//	out, err := ktav.RemoveValue(src, "targets.storagehost.address")
+//	out, err := ktav.RemoveValue(src, `list\.item.2`)
+//
+// The textual path splits on '.', with `\.` a literal dot and `\\` a
+// literal backslash; invalid escapes or empty segments are an *Error
+// with Class "EditInvalidPath". An empty textual path is Class
+// "EditInvalidPath". A path that does not address an existing value
+// (missing key, bad index, descent through a scalar, or an empty segment
+// list) is Class "EditNotFound". Removing a leaf, a whole
+// subtree or an array element is supported; empty ancestors are NOT
+// pruned. Errors of class "EditUnsupported" name structural cases with
+// no lossless single-range patch.
+func RemoveValue(src, textualPath string) (string, error) {
+	return removeValueVia(activeBackend(), src, textualPath)
+}
+
+// RemoveValueSegments is RemoveValue with pre-decoded literal segments:
+// no additional unescaping is performed. A numeric segment is a string
+// key inside an Object and a zero-based ASCII-digit index inside an
+// Array (leading zeros allowed, signs are not indexes). An empty
+// segment list is EditNotFound.
+func RemoveValueSegments(src string, segments []string) (string, error) {
+	return removeValueSegmentsVia(activeBackend(), src, segments)
+}
+
+// RenameKey renames the Object key addressed by textualPath in src, in
+// place: the pair's value, order, position and formatting are
+// preserved, only the key bytes are spliced:
+//
+//	out, err := ktav.RenameKey(src, "targets.storagehost.address", "endpoint")
+//
+// The textual path splits on '.', with `\.` a literal dot and `\\` a
+// literal backslash; invalid escapes or empty segments are an *Error
+// with Class "EditInvalidPath". newKey is ONE literal key: dots,
+// backslashes and Unicode are part of the name, never path syntax, and
+// it is inserted verbatim (no quoting beyond what the format requires).
+// Renaming to the SAME key is a no-op returning src byte-identical; a
+// sibling key equal to newKey yields Class "EditAlreadyExists"; a
+// missing target or non-Object parent is "EditNotFound"; renaming an
+// array index is "EditUnsupported".
+func RenameKey(src, textualPath, newKey string) (string, error) {
+	return renameKeyVia(activeBackend(), src, textualPath, newKey)
+}
+
+// RenameKeySegments is RenameKey with pre-decoded literal segments: no
+// additional unescaping is performed; newKey is still ONE literal key
+// (dots and backslashes are part of the name). An empty segment list is
+// EditNotFound.
+func RenameKeySegments(src string, segments []string, newKey string) (string, error) {
+	return renameKeySegmentsVia(activeBackend(), src, segments, newKey)
+}
+
 // ─── per-instance operations (no global state) ───────────────────────
 
 // Loads parses a Ktav document and returns its Go representation,
@@ -361,4 +581,43 @@ func (o *Operations) EditValue(src, textualPath string, replacement any) (string
 // dispatching through this instance's backend only.
 func (o *Operations) EditValueSegments(src string, segments []string, replacement any) (string, error) {
 	return editValueSegmentsVia(o.vt, src, segments, replacement)
+}
+
+// InsertValue inserts a NEW key/value pair, dispatching through this
+// instance's backend only. See the package-level [InsertValue] for the
+// full contract.
+func (o *Operations) InsertValue(src, textualPath string, replacement any) (string, error) {
+	return insertValueVia(o.vt, src, textualPath, replacement)
+}
+
+// InsertValueSegments is InsertValue with pre-decoded literal segments,
+// dispatching through this instance's backend only.
+func (o *Operations) InsertValueSegments(src string, segments []string, replacement any) (string, error) {
+	return insertValueSegmentsVia(o.vt, src, segments, replacement)
+}
+
+// RemoveValue deletes the value addressed by textualPath, dispatching
+// through this instance's backend only. See the package-level
+// [RemoveValue] for the full contract.
+func (o *Operations) RemoveValue(src, textualPath string) (string, error) {
+	return removeValueVia(o.vt, src, textualPath)
+}
+
+// RemoveValueSegments is RemoveValue with pre-decoded literal segments,
+// dispatching through this instance's backend only.
+func (o *Operations) RemoveValueSegments(src string, segments []string) (string, error) {
+	return removeValueSegmentsVia(o.vt, src, segments)
+}
+
+// RenameKey renames the Object key addressed by textualPath, dispatching
+// through this instance's backend only. See the package-level
+// [RenameKey] for the full contract.
+func (o *Operations) RenameKey(src, textualPath, newKey string) (string, error) {
+	return renameKeyVia(o.vt, src, textualPath, newKey)
+}
+
+// RenameKeySegments is RenameKey with pre-decoded literal segments,
+// dispatching through this instance's backend only.
+func (o *Operations) RenameKeySegments(src string, segments []string, newKey string) (string, error) {
+	return renameKeySegmentsVia(o.vt, src, segments, newKey)
 }

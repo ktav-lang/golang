@@ -64,7 +64,7 @@ jobs:
           set -euo pipefail
           cargo generate-lockfile
           want_ver="0.9.0"
-          want_src='git+https://github.com/ktav-lang/rust?rev=447a00bd012e8d3f347c7e1eb59c3f0d9a78332f#447a00bd012e8d3f347c7e1eb59c3f0d9a78332f'
+          want_src='git+https://github.com/ktav-lang/rust?rev=8b6b45ffbd9e50e1588e8ab6b1ae5d422bbe8910#8b6b45ffbd9e50e1588e8ab6b1ae5d422bbe8910'
           lock_ver="$(awk -F'"' '
             /^[[:space:]]*\[\[package\]\]/ { inktav=0 }
             /^[[:space:]]*name = "ktav"$/ { inktav=1 }
@@ -175,6 +175,9 @@ jobs:
         # native matrix; the PURE side of expected_location is covered by
         # TestPureCorpusInvalid, which runs all invalid fixtures here.
         run: go test -v -run '^(TestPure|TestProbe|TestBridge|TestCorpusManifest|TestLoadCorpusManifest|TestReadFixtureSource|TestWriter|TestDumpsForceStringsPreservesNonFiniteFloatText|TestInvalidUTF8|TestLineOfOffset|TestFirstInvalidUTF8|TestReadme)' ./...
+
+      - name: Segments source priority and nil (pure backend)
+        run: go test -v -run '^TestSegmentsSourcePriorityAndNil$' .
 
       - name: Engine and pure package tests (all engine tests)
         run: go test -v ./internal/engine ./pure

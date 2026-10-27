@@ -1,6 +1,9 @@
 package engine
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"unicode/utf8"
+)
 
 // Operations provides the shared pure-Go implementation. Its zero value is ready to use.
 type Operations struct{}
@@ -16,12 +19,89 @@ func (o *Operations) EmitCanonical(v any) (string, error)            { return du
 func (o *Operations) FormatSource(src string) (string, error)        { return formatPublic(src) }
 func (o *Operations) CanonicalFromSource(src string) (string, error) { return canonicalPublic(src) }
 
-// EditValue replaces the value addressed by the textual path
-// (`key1.key2\.literal.0`) with `replacement`, splicing only the
-// target's bytes. Source-scoped: comments, key spelling and EOLs outside
-// the edit survive verbatim.
 func (o *Operations) EditValue(src, textualPath string, replacement any) (string, error) {
 	return editPublic(src, textualPath, replacement)
+}
+
+func (o *Operations) InsertValue(src, textualPath string, value any) (string, error) {
+	text := src
+	if e := invalidUTF8Error(text); e != nil {
+		return "", e
+	}
+	if _, _, e := parseDoc(text, false, false); e != nil {
+		enrichLineText(text, e)
+		return "", e
+	}
+	if _, e := ValidateTextualEditPath([]byte(textualPath)); e != nil {
+		return "", e
+	}
+	wire, e := editWireReplacement(value)
+	if e != nil {
+		return "", e
+	}
+	out, e := pureInsertValueBytes([]byte(src), []byte(textualPath), wire)
+	return string(out), e
+}
+func (o *Operations) InsertValueSegments(src string, segments []string, value any) (string, error) {
+	text := src
+	if e := invalidUTF8Error(text); e != nil {
+		return "", e
+	}
+	if _, _, e := parseDoc(text, false, false); e != nil {
+		enrichLineText(text, e)
+		return "", e
+	}
+	path, e := marshalStrictSegmentsWire(segments)
+	if e != nil {
+		return "", e
+	}
+	if e = ValidateLiteralEditSegments(segments); e != nil {
+		return "", e
+	}
+	wire, e := editWireReplacement(value)
+	if e != nil {
+		return "", e
+	}
+	out, e := pureInsertValueSegmentsBytes([]byte(src), path, wire)
+	return string(out), e
+}
+func (o *Operations) RemoveValue(src, textualPath string) (string, error) {
+	out, e := pureRemoveValueBytes([]byte(src), []byte(textualPath))
+	return string(out), e
+}
+func (o *Operations) RemoveValueSegments(src string, segments []string) (string, error) {
+	if e := invalidUTF8Error(src); e != nil {
+		return "", e
+	}
+	if _, _, e := parseDoc(src, false, false); e != nil {
+		enrichLineText(src, e)
+		return "", e
+	}
+	path, e := marshalStrictSegmentsWire(segments)
+	if e != nil {
+		return "", e
+	}
+	out, e := pureRemoveValueSegmentsBytes([]byte(src), path)
+	return string(out), e
+}
+func (o *Operations) RenameKey(src, textualPath, newKey string) (string, error) {
+	out, e := pureRenameKeyBytes([]byte(src), []byte(textualPath), []byte(newKey))
+	return string(out), e
+}
+func (o *Operations) RenameKeySegments(src string, segments []string, newKey string) (string, error) {
+	if e := invalidUTF8Error(src); e != nil {
+		return "", e
+	}
+	if _, _, e := parseDoc(src, false, false); e != nil {
+		enrichLineText(src, e)
+		return "", e
+	}
+	path, e := marshalStrictSegmentsWire(segments)
+	if e != nil {
+		return "", e
+	}
+	out, e := pureRenameKeySegmentsBytes([]byte(src), path, []byte(newKey))
+	return string(out), e
 }
 
 // EditValueSegments is EditValue with pre-decoded literal segments: no
@@ -39,7 +119,23 @@ func PureEmitCanonical(b []byte) ([]byte, error)       { return pureEmitCanonica
 func PureFormatSource(b []byte) ([]byte, error)        { return pureFormatSource(b) }
 func PureCanonicalFromSource(b []byte) ([]byte, error) { return pureCanonicalFromSource(b) }
 
-// PureEditValue is the byte seam the backend vtable dispatches to:
+func PureInsertValue(src, path, replacement []byte) ([]byte, error) {
+	return pureInsertValueBytes(src, path, replacement)
+}
+func PureInsertValueSegments(src, path, replacement []byte) ([]byte, error) {
+	return pureInsertValueSegmentsBytes(src, path, replacement)
+}
+func PureRemoveValue(src, path []byte) ([]byte, error) { return pureRemoveValueBytes(src, path) }
+func PureRemoveValueSegments(src, path []byte) ([]byte, error) {
+	return pureRemoveValueSegmentsBytes(src, path)
+}
+func PureRenameKey(src, path, newKey []byte) ([]byte, error) {
+	return pureRenameKeyBytes(src, path, newKey)
+}
+func PureRenameKeySegments(src, path, newKey []byte) ([]byte, error) {
+	return pureRenameKeySegmentsBytes(src, path, newKey)
+}
+
 // UTF-8 source, UTF-8 textual path, tagged-wire replacement (scalar
 // allowed); output is UTF-8 source bytes.
 func PureEditValue(src, path, replacement []byte) ([]byte, error) {
@@ -108,6 +204,14 @@ func marshalSegmentsWire(segments []string) ([]byte, error) {
 		return []byte("[]"), nil
 	}
 	return json.Marshal(segments)
+}
+func marshalStrictSegmentsWire(segments []string) ([]byte, error) {
+	for _, segment := range segments {
+		if !utf8.ValidString(segment) {
+			return nil, messageErr("input transport is not valid UTF-8")
+		}
+	}
+	return marshalSegmentsWire(segments)
 }
 
 // Shared conversion and wire seams used by the native-backed root package.

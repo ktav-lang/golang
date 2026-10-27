@@ -24,6 +24,30 @@ func enginePureEditValueSegments(src, path, replacement []byte) ([]byte, error) 
 	return engine.PureEditValueSegments(src, path, replacement)
 }
 
+func enginePureInsertValue(src, path, replacement []byte) ([]byte, error) {
+	return engine.PureInsertValue(src, path, replacement)
+}
+
+func enginePureInsertValueSegments(src, path, replacement []byte) ([]byte, error) {
+	return engine.PureInsertValueSegments(src, path, replacement)
+}
+
+func enginePureRemoveValue(src, path []byte) ([]byte, error) {
+	return engine.PureRemoveValue(src, path)
+}
+
+func enginePureRemoveValueSegments(src, path []byte) ([]byte, error) {
+	return engine.PureRemoveValueSegments(src, path)
+}
+
+func enginePureRenameKey(src, path, newKey []byte) ([]byte, error) {
+	return engine.PureRenameKey(src, path, newKey)
+}
+
+func enginePureRenameKeySegments(src, path, newKey []byte) ([]byte, error) {
+	return engine.PureRenameKeySegments(src, path, newKey)
+}
+
 // Backend selects which implementation backs the package's public
 // operations.
 //
@@ -49,42 +73,60 @@ const (
 // entries never touch the purego/loader code paths; the native entries
 // are the ktav_ffi.go wrappers unchanged.
 type backendVTable struct {
-	loads             func(src []byte) ([]byte, error)
-	loadsStrict       func(src []byte) ([]byte, error)
-	dumps             func(src []byte) ([]byte, error)
-	dumpsForceStrings func(src []byte) ([]byte, error)
-	emitCanonical     func(src []byte) ([]byte, error)
-	formatSource      func(src []byte) ([]byte, error)
-	canonicalFromSrc  func(src []byte) ([]byte, error)
-	editValue         func(src, path, replacement []byte) ([]byte, error)
-	editValueSegments func(src, path, replacement []byte) ([]byte, error)
+	loads               func(src []byte) ([]byte, error)
+	loadsStrict         func(src []byte) ([]byte, error)
+	dumps               func(src []byte) ([]byte, error)
+	dumpsForceStrings   func(src []byte) ([]byte, error)
+	emitCanonical       func(src []byte) ([]byte, error)
+	formatSource        func(src []byte) ([]byte, error)
+	canonicalFromSrc    func(src []byte) ([]byte, error)
+	editValue           func(src, path, replacement []byte) ([]byte, error)
+	editValueSegments   func(src, path, replacement []byte) ([]byte, error)
+	insertValue         func(src, path, replacement []byte) ([]byte, error)
+	insertValueSegments func(src, path, replacement []byte) ([]byte, error)
+	removeValue         func(src, path []byte) ([]byte, error)
+	removeValueSegments func(src, path []byte) ([]byte, error)
+	renameKey           func(src, path, newKey []byte) ([]byte, error)
+	renameKeySegments   func(src, path, newKey []byte) ([]byte, error)
 }
 
 func nativeVTable() *backendVTable {
 	return &backendVTable{
-		loads:             loadsJSON,
-		loadsStrict:       loadsStrictJSON,
-		dumps:             dumpsJSON,
-		dumpsForceStrings: dumpsForceStringsJSON,
-		emitCanonical:     emitCanonicalJSON,
-		formatSource:      formatSource,
-		canonicalFromSrc:  canonicalFromSourceJSON,
-		editValue:         editValueNative,
-		editValueSegments: editValueSegmentsNative,
+		loads:               loadsJSON,
+		loadsStrict:         loadsStrictJSON,
+		dumps:               dumpsJSON,
+		dumpsForceStrings:   dumpsForceStringsJSON,
+		emitCanonical:       emitCanonicalJSON,
+		formatSource:        formatSource,
+		canonicalFromSrc:    canonicalFromSourceJSON,
+		editValue:           editValueNative,
+		editValueSegments:   editValueSegmentsNative,
+		insertValue:         insertValueNative,
+		insertValueSegments: insertValueSegmentsNative,
+		removeValue:         removeValueNative,
+		removeValueSegments: removeValueSegmentsNative,
+		renameKey:           renameKeyNative,
+		renameKeySegments:   renameKeySegmentsNative,
 	}
 }
 
 func pureVTable() *backendVTable {
 	return &backendVTable{
-		loads:             enginePureLoads,
-		loadsStrict:       enginePureLoadsStrict,
-		dumps:             enginePureDumps,
-		dumpsForceStrings: enginePureDumpsForceStrings,
-		emitCanonical:     enginePureEmitCanonical,
-		formatSource:      enginePureFormatSource,
-		canonicalFromSrc:  enginePureCanonicalFromSource,
-		editValue:         enginePureEditValue,
-		editValueSegments: enginePureEditValueSegments,
+		loads:               enginePureLoads,
+		loadsStrict:         enginePureLoadsStrict,
+		dumps:               enginePureDumps,
+		dumpsForceStrings:   enginePureDumpsForceStrings,
+		emitCanonical:       enginePureEmitCanonical,
+		formatSource:        enginePureFormatSource,
+		canonicalFromSrc:    enginePureCanonicalFromSource,
+		editValue:           enginePureEditValue,
+		editValueSegments:   enginePureEditValueSegments,
+		insertValue:         enginePureInsertValue,
+		insertValueSegments: enginePureInsertValueSegments,
+		removeValue:         enginePureRemoveValue,
+		removeValueSegments: enginePureRemoveValueSegments,
+		renameKey:           enginePureRenameKey,
+		renameKeySegments:   enginePureRenameKeySegments,
 	}
 }
 

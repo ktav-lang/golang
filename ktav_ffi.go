@@ -100,6 +100,65 @@ func editValueSegmentsNative(src, path, replacement []byte) ([]byte, error) {
 	return callEditFn(s, s.EditValueSegments, src, path, replacement)
 }
 
+// insertValueNative invokes ktav_insert_value: source, textual path
+// (final segment is the NEW Object key) and tagged-wire replacement.
+func insertValueNative(src, path, replacement []byte) ([]byte, error) {
+	s, err := native.Load()
+	if err != nil {
+		return nil, err
+	}
+	return callEditFn(s, s.InsertValue, src, path, replacement)
+}
+
+// insertValueSegmentsNative invokes ktav_insert_value_segments: path is
+// the UTF-8 JSON array of literal segment strings.
+func insertValueSegmentsNative(src, path, replacement []byte) ([]byte, error) {
+	s, err := native.Load()
+	if err != nil {
+		return nil, err
+	}
+	return callEditFn(s, s.InsertValueSegments, src, path, replacement)
+}
+
+// removeValueNative invokes ktav_remove_value: source + textual path
+// only — no replacement operand.
+func removeValueNative(src, path []byte) ([]byte, error) {
+	s, err := native.Load()
+	if err != nil {
+		return nil, err
+	}
+	return callEdit2Fn(s, s.RemoveValue, src, path)
+}
+
+// removeValueSegmentsNative invokes ktav_remove_value_segments: path is
+// the UTF-8 JSON array of literal segment strings.
+func removeValueSegmentsNative(src, path []byte) ([]byte, error) {
+	s, err := native.Load()
+	if err != nil {
+		return nil, err
+	}
+	return callEdit2Fn(s, s.RemoveValueSegments, src, path)
+}
+
+// renameKeyNative invokes ktav_rename_key: newKey is ONE literal UTF-8
+// key — no JSON encoding, no path escaping.
+func renameKeyNative(src, path, newKey []byte) ([]byte, error) {
+	s, err := native.Load()
+	if err != nil {
+		return nil, err
+	}
+	return callEditFn(s, s.RenameKey, src, path, newKey)
+}
+
+// renameKeySegmentsNative invokes ktav_rename_key_segments.
+func renameKeySegmentsNative(src, path, newKey []byte) ([]byte, error) {
+	s, err := native.Load()
+	if err != nil {
+		return nil, err
+	}
+	return callEditFn(s, s.RenameKeySegments, src, path, newKey)
+}
+
 var emptyInputByte byte
 
 // callEditFn invokes a C ABI function with signature
@@ -156,6 +215,68 @@ func callEditFn(s *native.Syms, fn uintptr, src, path, replacement []byte) ([]by
 	runtime.KeepAlive(src)
 	runtime.KeepAlive(path)
 	runtime.KeepAlive(replacement)
+
+	if rc != 0 {
+		raw := "ktav: unknown error"
+		if outErr != 0 && outErrLen != 0 {
+			raw = string(copyFromC(outErr, outErrLen))
+			purego.SyscallN(s.Free, outErr, outErrLen)
+		}
+		return nil, errorFromEnvelope([]byte(raw))
+	}
+
+	var out []byte
+	if outBuf != 0 && outLen != 0 {
+		out = copyFromC(outBuf, outLen)
+		purego.SyscallN(s.Free, outBuf, outLen)
+	}
+	return out, nil
+}
+
+// callEdit2Fn invokes a C ABI function with signature
+//
+//	int fn(const u8 *src, usize src_len,
+//	       const u8 *path, usize path_len,
+//	       u8 **out_buf, usize *out_len,
+//	       char **out_err, usize *out_err_len)
+//
+// and returns the output bytes on success or a *Error on failure.
+func callEdit2Fn(s *native.Syms, fn uintptr, src, path []byte) ([]byte, error) {
+	var (
+		srcPtr    uintptr
+		pathPtr   uintptr
+		outBuf    uintptr
+		outLen    uintptr
+		outErr    uintptr
+		outErrLen uintptr
+	)
+	if len(src) > 0 {
+		srcPtr = uintptr(unsafe.Pointer(&src[0]))
+	} else {
+		srcPtr = uintptr(unsafe.Pointer(&emptyInputByte))
+	}
+	if len(path) > 0 {
+		pathPtr = uintptr(unsafe.Pointer(&path[0]))
+	} else {
+		pathPtr = uintptr(unsafe.Pointer(&emptyInputByte))
+	}
+
+	rc, _, _ := purego.SyscallN(
+		fn,
+		srcPtr,
+		uintptr(len(src)),
+		pathPtr,
+		uintptr(len(path)),
+		uintptr(unsafe.Pointer(&outBuf)),
+		uintptr(unsafe.Pointer(&outLen)),
+		uintptr(unsafe.Pointer(&outErr)),
+		uintptr(unsafe.Pointer(&outErrLen)),
+	)
+
+	// Keep the inputs alive through the call — Go's escape analysis may
+	// not see the C-side access.
+	runtime.KeepAlive(src)
+	runtime.KeepAlive(path)
 
 	if rc != 0 {
 		raw := "ktav: unknown error"

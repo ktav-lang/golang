@@ -54,17 +54,24 @@ const releaseAssetBase = "https://github.com/ktav-lang/golang/releases/download/
 
 // Syms holds the function pointers obtained from the loaded library.
 type Syms struct {
-	Loads             uintptr
-	LoadsStrict       uintptr
-	Dumps             uintptr
-	DumpsForceStrings uintptr
-	EmitCanonical     uintptr
-	Format            uintptr
-	EditValue         uintptr
-	EditValueSegments uintptr
-	AbiVersion        uintptr
-	Free              uintptr
-	Version           uintptr
+	Loads               uintptr
+	LoadsStrict         uintptr
+	Dumps               uintptr
+	DumpsForceStrings   uintptr
+	EmitCanonical       uintptr
+	CanonicalFromSource uintptr
+	Format              uintptr
+	EditValue           uintptr
+	EditValueSegments   uintptr
+	InsertValue         uintptr
+	InsertValueSegments uintptr
+	RemoveValue         uintptr
+	RemoveValueSegments uintptr
+	RenameKey           uintptr
+	RenameKeySegments   uintptr
+	AbiVersion          uintptr
+	Free                uintptr
+	Version             uintptr
 }
 
 var (
@@ -124,6 +131,10 @@ func Load() (*Syms, error) {
 			loadErr = err
 			return
 		}
+		if err := bindSym(handle, "ktav_canonical_from_source", &s.CanonicalFromSource); err != nil {
+			loadErr = err
+			return
+		}
 		if err := bindSym(handle, "ktav_format", &s.Format); err != nil {
 			loadErr = err
 			return
@@ -136,6 +147,33 @@ func Load() (*Syms, error) {
 			return
 		}
 		if err := bindSym(handle, "ktav_edit_value_segments", &s.EditValueSegments); err != nil {
+			loadErr = err
+			return
+		}
+		// Вставка/удаление/переименование: символы того же ABI2 —
+		// отсутствие символа даёт ясную ошибку загрузки,
+		// чистый бэкенд никогда не подставляется молча.
+		if err := bindSym(handle, "ktav_insert_value", &s.InsertValue); err != nil {
+			loadErr = err
+			return
+		}
+		if err := bindSym(handle, "ktav_insert_value_segments", &s.InsertValueSegments); err != nil {
+			loadErr = err
+			return
+		}
+		if err := bindSym(handle, "ktav_remove_value", &s.RemoveValue); err != nil {
+			loadErr = err
+			return
+		}
+		if err := bindSym(handle, "ktav_remove_value_segments", &s.RemoveValueSegments); err != nil {
+			loadErr = err
+			return
+		}
+		if err := bindSym(handle, "ktav_rename_key", &s.RenameKey); err != nil {
+			loadErr = err
+			return
+		}
+		if err := bindSym(handle, "ktav_rename_key_segments", &s.RenameKeySegments); err != nil {
 			loadErr = err
 			return
 		}

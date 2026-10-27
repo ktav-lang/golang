@@ -28,6 +28,17 @@ bump MINOR считается ломающим.
   пользователем подъём с 1) и отклоняет старые библиотеки понятной
   ошибкой версии — никогда не подменяя их тихим pure-fallback.
   Версии пакетов не менялись.
+- В root Go-пакете и самостоятельном `pure` добавлены `InsertValue` /
+  `InsertValueSegments`, `RemoveValue` / `RemoveValueSegments` и
+  `RenameKey` / `RenameKeySegments`. Insert добавляет пару Object;
+  remove удаляет элемент массива вместе с разделителем и не удаляет
+  пустых предков (удаление последнего `b` из `a.b: 1\n` даёт `a: {}\n`).
+  Rename меняет ключ Object на месте. C ABI 2 должна экспортировать
+  `ktav_insert_value`, `ktav_insert_value_segments`, `ktav_remove_value`,
+  `ktav_remove_value_segments`, `ktav_rename_key` и
+  `ktav_rename_key_segments`; старая ABI 2 без любого из них несовместима.
+  Pure-Go не зависит от native.
+- Точные сигнатуры (в обоих пакетах): `InsertValue(src, textualPath string, replacement any) (string, error)`, `InsertValueSegments(src string, segments []string, replacement any) (string, error)`, `RemoveValue(src, textualPath string) (string, error)`, `RemoveValueSegments(src string, segments []string) (string, error)`, `RenameKey(src, textualPath, newKey string) (string, error)` и `RenameKeySegments(src string, segments []string, newKey string) (string, error)`. В текстовом пути `.` — разделитель, `\.`/`\\` — экранирование; сегменты и `newKey` являются literal-ключами. Неверный текстовый путь даёт `EditInvalidPath`; отсутствующая цель/родитель, неверный индекс массива или спуск через скаляр — `EditNotFound`; конфликт ключей — `EditAlreadyExists`. Вставка в массив, переименование индекса массива и структурная правка без lossless-сплайса дают `EditUnsupported`. Индексы массива — ASCII-цифры с нуля (ведущие нули допустимы); числовой сегмент Object — строковый ключ. Insert использует обычное Go-сопоставление типов `Dumps`. Все 18 экспортируемых ABI-символов требуют версии ABI 2; шесть mutation-символов перечислены выше. Native и pure — независимые бэкенды.
 - Подключён корпус спецификации 0.9 (412 фикстур; invalid вырос до 162
   за счёт 72 новых diagnostics09 — EOF + malformed UTF-8) с
   fixture-driven regression-runner, проверяющим `expected_location`

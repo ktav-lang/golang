@@ -29,3 +29,23 @@ func ExampleLoads() {
 	// true
 	// true
 }
+
+func ExampleInsertValue() {
+	out, err := pure.InsertValue("server: {port: 8080}\n", `server.host`, "localhost")
+	if err != nil {
+		panic(err)
+	}
+	fmt.Print(out)
+	// Output:
+	// server: {port: 8080, host: localhost}
+}
+
+func ExampleRenameKey() {
+	out, err := pure.RenameKey("a: 1\n", "a", `new.key`)
+	if err != nil {
+		panic(err)
+	}
+	fmt.Print(out)
+	// Output:
+	// "new.key": 1
+}

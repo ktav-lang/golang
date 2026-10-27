@@ -24,11 +24,12 @@ type editSlot struct {
 }
 
 type editNode struct {
-	kind   byte // kStr for scalar, kObj, kArr
-	table  *editTable
-	items  []*editNode
-	inline bool
-	slot   *editSlot
+	kind        byte // kStr for scalar, kObj, kArr
+	table       *editTable
+	items       []*editNode
+	inline      bool
+	slot        *editSlot
+	open, close int // delimiters for inline compounds, absolute source offsets
 }
 
 func editScalarNode(slot *editSlot) *editNode {
@@ -593,7 +594,7 @@ func positionInline(body string, baseAbs, lineNum int, span kspan, isObject bool
 				return nil, fmt.Errorf("inline insert: %v", ierr)
 			}
 		}
-		return &editNode{kind: kObj, table: table, inline: true}, nil
+		return &editNode{kind: kObj, table: table, inline: true, open: baseAbs, close: baseAbs + len(body) - 1}, nil
 	}
 	items := []*editNode{}
 	for _, seg := range segments {
@@ -612,7 +613,7 @@ func positionInline(body string, baseAbs, lineNum int, span kspan, isObject bool
 		node.slot = &editSlot{kind: slotItem, colon: segBase, b0: valueAbs, b1: segEnd}
 		items = append(items, node)
 	}
-	return &editNode{kind: kArr, items: items, inline: true}, nil
+	return &editNode{kind: kArr, items: items, inline: true, open: baseAbs, close: baseAbs + len(body) - 1}, nil
 }
 
 func positionInlineChild(v string, vAbs, lineNum int, span kspan, depth int) (*editNode, error) {

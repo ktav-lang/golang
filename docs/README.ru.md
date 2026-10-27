@@ -135,6 +135,12 @@ fmt.Print(out)
 | `FormatSource(src string) (string, error)` | Отформатировать Ktav-источник в нормализованное написание, **сохраняя все комментарии**. См. ниже. |
 | `EditValue(src, path string, replacement any) (string, error)` | Заменить значение по текстовому dotted-пути **в исходном тексте** и вернуть исправленный источник. См. [Правка исходника](#правка-исходника). |
 | `EditValueSegments(src string, segments []string, replacement any) (string, error)` | То же с уже декодированными literal-сегментами (без повторного unescape). |
+| `InsertValue(src, path string, value any) (string, error)` | Вставить значение по текстовому dotted-пути в исходный текст. |
+| `InsertValueSegments(src string, segments []string, value any) (string, error)` | То же с уже декодированными literal-сегментами (без повторного unescape). |
+| `RemoveValue(src, path string) (string, error)` | Удалить значение по текстовому dotted-пути из исходного текста. |
+| `RemoveValueSegments(src string, segments []string) (string, error)` | То же с уже декодированными literal-сегментами (без повторного unescape). |
+| `RenameKey(src, path, newKey string) (string, error)` | Переименовать ключ по текстовому dotted-пути в исходном тексте. |
+| `RenameKeySegments(src string, segments []string, newKey string) (string, error)` | То же с уже декодированными literal-сегментами (без повторного unescape). |
 
 ## Форматирование — каноническое написание с сохранением комментариев
 
@@ -232,9 +238,7 @@ out, err := ktav.EditValueSegments(src, []string{"targets", "storagehost", "addr
   без повторного unescape. Числовой сегмент — строковый ключ в Object и
   zero-based индекс из ASCII-цифр в Array (ведущие нули допустимы, знаки
   — нет). Пустой список сегментов — `"EditNotFound"`.
-- Поддерживается только **замена существующего значения**: без create,
-  remove и rename. Отсутствующий ключ, индекс вне диапазона или спуск
-  через скаляр — `"EditNotFound"`.
+- `EditValue` заменяет существующее значение в исходном тексте. Для вставки, удаления и переименования ключа см. [Вставка, удаление и переименование](#вставка-удаление-и-переименование). Отсутствующий ключ, индекс вне диапазона или спуск через скаляр — `"EditNotFound"`.
 
 Значения замены используют обычную Go-таблицу типов (всё, что принимает
 `Dumps`, включая скаляры); integer хоста никогда не превращается во
@@ -265,6 +269,33 @@ float.
   верифицируется — тихое повреждение невозможно.
 - Native (C ABI) и pure-Go бэкенды совпадают байт-в-байт; оба
   прогоняются через один и тот же regression-корпус.
+
+## Вставка, удаление и переименование
+
+Пакеты верхнего уровня `ktav` и самостоятельный `pure` предоставляют одинаковые API:
+
+```go
+func InsertValue(src, textualPath string, replacement any) (string, error)
+func InsertValueSegments(src string, segments []string, replacement any) (string, error)
+func RemoveValue(src, textualPath string) (string, error)
+func RemoveValueSegments(src string, segments []string) (string, error)
+func RenameKey(src, textualPath, newKey string) (string, error)
+func RenameKeySegments(src string, segments []string, newKey string) (string, error)
+```
+
+Текстовый путь использует разделитель `.`; `\.` и `\\` задают literal-точку и обратную косую черту. API с сегментами принимают literal, заранее декодированные сегменты: `[]string{"a.b"}` адресует один ключ `a.b`. Например:
+
+```go
+out, err := ktav.InsertValue(src, `list\.item.new`, "value")
+out, err := ktav.RemoveValue(src, `list\.item.0`)
+out, err := ktav.RenameKeySegments(src, []string{"list.item", "old"}, "new.name")
+```
+
+Последний сегмент Insert — новый ключ Object; родитель должен существовать и быть Object, пара добавляется в конец. Remove удаляет лист или поддерево; элемент массива удаляется вместе с разделителем. Вставка и удаление не удаляют пустых предков: например, удаление последнего `b` из dotted-источника `a.b: 1\n` даёт `a: {}\n` (пустой родитель материализуется), а не удаляет `a`. Rename переименовывает один ключ Object на месте, сохраняя значение и позицию пары; `newKey` — один literal-ключ, не путь. Переименование в тот же ключ — побайтный no-op.
+
+Некорректный текстовый путь даёт `*ktav.Error` с `Class == "EditInvalidPath"`. Отсутствующие цель/родитель, неверный индекс массива или спуск через скаляр дают `EditNotFound`; существующий ключ при вставке или совпадающий ключ-сосед при переименовании — `EditAlreadyExists`. Вставка в массив, переименование ключа массива и структурные случаи без lossless-патча одним диапазоном дают `EditUnsupported`. Индексы массива — zero-based ASCII-цифры (ведущие нули разрешены, знаки не являются индексами); числовые сегменты в Object остаются обычными строковыми ключами. Значения Insert используют стандартное Go-сопоставление типов `Dumps`.
+
+Библиотека C-FFI ABI 2 должна экспортировать все шесть символов: `ktav_insert_value`, `ktav_insert_value_segments`, `ktav_remove_value`, `ktav_remove_value_segments`, `ktav_rename_key` и `ktav_rename_key_segments`. Старая библиотека ABI 2 без этих символов несовместима с этой Go-привязкой и не поддерживает эти API. API pure-Go самостоятельны и не загружают native-библиотеку; native и pure — независимые реализации.
 
 ### Практические примеры правки исходника
 

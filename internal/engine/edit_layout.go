@@ -65,23 +65,21 @@ func layoutAdjust(source, candidate string, root *editNode, segments []string, r
 	return result.String(), nil
 }
 
+// layoutAdjustInsert keeps insertion's inline candidate when standalone block
+// encoding is impossible. mutateInsert performs the mandatory semantic check.
+func layoutAdjustInsert(source, candidate string, root *editNode, segments []string, repl *pvalue, from, to, inserted int) (string, *Error) {
+	adjusted, err := layoutAdjust(source, candidate, root, segments, repl, from, to, inserted)
+	if !blockEncodable(repl) {
+		return candidate, nil
+	}
+	return adjusted, err
+}
+
 // inlineOwner finds the smallest inline-compound range containing the
 // splice position, if any (the Rust layout::inline_owner port).
 func inlineOwner(source string, root *editNode, segments []string, pos int) (int, int, bool, *Error) {
 	if root.inline {
-		lineStart := 0
-		if n := strings.LastIndexAny(source[:pos], "\n\r"); n >= 0 {
-			lineStart = n + 1
-		}
-		line := source[lineStart:editPhysicalLineEnd(source, pos)]
-		body := trimLeadingInline(trimInline(line))
-		body = strings.TrimPrefix(body, "\uFEFF")
-		abs := strings.LastIndex(line, body)
-		if abs < 0 {
-			return 0, 0, false, nil
-		}
-		start := lineStart + abs
-		return start, start + len(body), true, nil
+		return root.open, root.close + 1, true, nil
 	}
 	cur := root
 	for _, segment := range segments {
@@ -196,6 +194,35 @@ func requiresBlock(value *pvalue, depth int) (bool, *Error) {
 	default:
 		return false, nil
 	}
+}
+
+// blockEncodable mirrors insertion's standalone-block constraints: CR and a
+// line consisting of `))` cannot be represented losslessly in block form.
+func blockEncodable(value *pvalue) bool {
+	switch value.kind {
+	case kStr:
+		if strings.ContainsRune(value.s, '\r') {
+			return false
+		}
+		for _, line := range splitLF(value.s) {
+			if trimMultilineWS(line) == "))" {
+				return false
+			}
+		}
+	case kObj:
+		for _, entry := range value.obj.entries {
+			if !blockEncodable(entry.val) {
+				return false
+			}
+		}
+	case kArr:
+		for _, item := range value.arr {
+			if !blockEncodable(item) {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 // expandInline renders the expanded block form of an inline compound.

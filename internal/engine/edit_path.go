@@ -18,10 +18,32 @@ import (
 	"unicode/utf8"
 )
 
-// parseEditPath splits the textual dotted path on '.'; `\.` is a literal
-// dot, `\\` a literal backslash, any other escape (or a trailing lone
-// backslash, or an empty segment) is EditInvalidPath carrying the byte
-// offset where the problem was detected.
+// ValidateLiteralEditSegments ensures decoded segments are non-empty.
+func ValidateLiteralEditSegments(segments []string) error {
+	if len(segments) == 0 {
+		return editNotFound()
+	}
+	return nil
+}
+
+// ValidateTextualEditPath validates a textual path before replacement conversion.
+func ValidateTextualEditPath(path []byte) ([]string, error) {
+	if err := transportUTF8Error(path); err != nil {
+		return nil, err
+	}
+	segments, err := parseEditPath(string(path))
+	if err != nil {
+		return nil, err
+	}
+	if len(segments) == 0 {
+		return nil, editNotFound()
+	}
+	return segments, nil
+}
+
+// parseEditPath splits dotted paths; `\.` escapes a dot and `\\` escapes
+// a backslash. Any other escape, trailing lone backslash, or empty segment
+// returns EditInvalidPath with the byte offset where the problem was detected.
 func parseEditPath(path string) ([]string, *Error) {
 	if path == "" {
 		return nil, editInvalidPath(0)
@@ -120,6 +142,8 @@ func parseEditIndex(seg string) (int, *Error) {
 // (U+D800..U+DFFF are never valid UTF-8 in Go), so this is exactly the
 // one check the pure seams need — no extra rune walk, no extra
 // protection beyond the stdlib.
+func TransportUTF8Error(raw []byte) *Error { return transportUTF8Error(raw) }
+
 func transportUTF8Error(raw []byte) *Error {
 	if !utf8.Valid(raw) {
 		return messageErr("input transport is not valid UTF-8")

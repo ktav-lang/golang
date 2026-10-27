@@ -1,55 +1,81 @@
 >>>>> lang=en
-- `EditValue` takes a textual path (`key1.key2.0.key4`). Inside a
-  segment `\.` is a literal dot and `\\` a literal backslash; any other
-  escape, a trailing lone backslash, or an empty segment is an
-  `*ktav.Error` with `Class == "EditInvalidPath"` whose `Body` is the
-  UTF-8 byte offset of the problem inside the path argument.
-- `EditValueSegments` takes pre-decoded literal segments — no additional
-  unescaping. A numeric segment is a string key inside an Object and a
-  zero-based ASCII-digit index inside an Array (leading zeros allowed,
-  signs are not indexes). An empty segment list is `"EditNotFound"`.
-- Only **replacement of an existing value** is supported: no create,
-  remove, or rename. A missing key, an out-of-bounds index, or descent
-  through a scalar is `"EditNotFound"`.
-
 Replacement values use the ordinary Go type mapping (`Dumps` accepts
 them, scalars included); a host integer never degrades to a float.
 
 Guarantees:
 
->>>>> lang=ru
-- `EditValue` принимает текстовый путь (`key1.key2.0.key4`). Внутри
-  сегмента `\.` — literal точка, `\\` — literal backslash; любой другой
-  escape, хвостовой `\` или пустой сегмент — `*ktav.Error` с
-  `Class == "EditInvalidPath"`, где `Body` — UTF-8 byte-офсет проблемы
-  внутри аргумента пути.
-- `EditValueSegments` принимает уже декодированные literal-сегменты —
-  без повторного unescape. Числовой сегмент — строковый ключ в Object и
-  zero-based индекс из ASCII-цифр в Array (ведущие нули допустимы, знаки
-  — нет). Пустой список сегментов — `"EditNotFound"`.
-- Поддерживается только **замена существующего значения**: без create,
-  remove и rename. Отсутствующий ключ, индекс вне диапазона или спуск
-  через скаляр — `"EditNotFound"`.
+- A no-op replacement (the new value equals the old one) returns the
+  source byte-identical, however noncanonical its spelling.
+- Marker transitions are minimal: switching a scalar to a numeric- or
+  keyword-like String toggles only the second `:` of the `::` marker,
+  and the original spacing around it is preserved.
+- Dotted, inline, and block forms are preserved, including a whole
+  inline container replacement and emptied-but-not-collapsed block
+  containers.
+- Inline ancestors expand to block form only when readability requires:
+  a multiline replacement string, growth beyond max(100 Unicode scalar
+  values, the old physical line length), or ≥ 4 inline escapes with ≥ 25%
+  overhead. Untouched nested branches stay inline; new block levels use
+  four spaces and the source EOL.
+- Errors of class `"EditUnsupported"` name pairs with no lossless
+  single-range patch: noncontiguous dotted-key/reopen targets, structural
+  replacement that would drop interior comment lines (leaf edits inside
+  such containers still work and keep the comments), or values without a
+  lossless representation in the target context.
+- Every successful patch is re-parsed and semantically verified before
+  it is returned, so silent corruption is impossible.
+- The native (C ABI) and pure-Go backends agree byte-for-byte; both are
+  exercised against the same regression corpus.
 
+>>>>> lang=ru
 Значения замены используют обычную Go-таблицу типов (всё, что принимает
 `Dumps`, включая скаляры); integer хоста никогда не превращается во
 float.
 
 Гарантии:
 
->>>>> lang=zh
-- `EditValue` 接受文本路径（`key1.key2.0.key4`）。段内 `\.` 表示字面量
-  点号，`\\` 表示字面量反斜杠；任何其他转义、结尾的孤立 `\` 或空段都会
-  得到 `Class == "EditInvalidPath"` 的 `*ktav.Error`，其 `Body` 是问题在
-  路径参数中的 UTF-8 字节偏移。
-- `EditValueSegments` 接受已解码的字面量段 —— 不做额外反转义。数字段在
-  Object 中是字符串键，在 Array 中是从零开始的 ASCII 数字索引（允许前导
-  零，不允许符号）。空段列表为 `"EditNotFound"`。
-- 仅支持**替换已有值**：没有 create、remove 或 rename。缺失键、越界索引
-  或穿过标量的下降都是 `"EditNotFound"`。
+- No-op (замена равна старому значению) возвращает исходник
+  байт-в-байт, каким бы неканоничным ни было его написание.
+- Переходы маркеров минимальны: замена скаляра на числоподобную или
+  keyword-подобную String переключает только второй `:` маркера `::`,
+  исходные пробелы вокруг сохраняются.
+- Dotted-, inline- и блочные формы сохраняются, включая замену целого
+  inline-контейнера и опустошённый (но не свернувшийся) блочный
+  контейнер.
+- Inline-предки раскрываются в блочную форму только когда требует
+  читаемость: многострочная строка замены, рост строки сверх
+  max(100 Unicode scalar values, прежняя длина физической строки) или
+  ≥ 4 inline-escapes с накладными расходами ≥ 25%. Незатронутые вложенные
+  ветки остаются inline; новые блочные уровни — четыре пробела и EOL
+  источника.
+- Ошибки класса `"EditUnsupported"` описывают пары цель/замена без
+  lossless-патча: noncontiguous dotted-key/reopen-цели, структурная
+  замена, которая потеряла бы внутренние комментарии (правка листа
+  внутри такого контейнера работает и сохраняет комментарии), значения без
+  lossless-представления в контексте цели.
+- Каждый успешный патч перед возвратом повторно парсится и семантически
+  верифицируется — тихое повреждение невозможно.
+- Native (C ABI) и pure-Go бэкенды совпадают байт-в-байт; оба
+  прогоняются через один и тот же regression-корпус.
 
+>>>>> lang=zh
 替换值使用常规的 Go 类型映射（`Dumps` 接受的一切，包括标量）；宿主
 integer 绝不会退化为 float。
 
 保证：
+
+- no-op 替换（新值等于旧值）逐字节返回源码，无论其写法多么非规范。
+- 标记切换最小化：把标量换成数字形或关键字形 String 只切换 `::` 标记的
+  第二个 `:`，其周围的原始空格保持不变。
+- dotted、inline 与 block 形式均保留，包括整体替换内联容器，以及清空但
+  不折叠的 block 容器。
+- 仅在可读性需要时才把内联祖先展开为 block 形式：多行替换字符串、行长
+  超过 max(100 个 Unicode scalar values, 原物理行长)，或 ≥ 4 个内联转义
+  且开销 ≥ 25%。未触及的嵌套分支保持内联；新 block 层级使用四个空格和
+  源文件的 EOL。
+- `"EditUnsupported"` 类错误表示不存在无损单区间补丁：dotted-key/reopen
+  形成的不连续目标、会丢失内部注释行的结构性替换（此类容器内的叶编辑
+  仍可用且保留注释）、或无法在目标上下文中无损表示的值。
+- 每个成功补丁在返回前都会重新解析并做语义验证 —— 不可能悄悄损坏文档。
+- Native（C ABI）与纯 Go 后端逐字节一致；两者都针对同一回归语料运行。
 

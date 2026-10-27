@@ -135,6 +135,12 @@ fmt.Print(out)
 | `FormatSource(src string) (string, error)` | 把 Ktav 源文本格式化为规范化写法，**保留全部注释**。见下文。 |
 | `EditValue(src, path string, replacement any) (string, error)` | 按文本点分路径**在源文本中**替换值，返回修改后的源码。见[源码编辑](#源码编辑)。 |
 | `EditValueSegments(src string, segments []string, replacement any) (string, error)` | 同上，但接受已解码的字面量段（不做额外反转义）。 |
+| `InsertValue(src, path string, value any) (string, error)` | 按文本点分路径在源文本中插入值。 |
+| `InsertValueSegments(src string, segments []string, value any) (string, error)` | 同上，但接受已解码的字面量段（不做额外反转义）。 |
+| `RemoveValue(src, path string) (string, error)` | 按文本点分路径从源文本中删除值。 |
+| `RemoveValueSegments(src string, segments []string) (string, error)` | 同上，但接受已解码的字面量段（不做额外反转义）。 |
+| `RenameKey(src, path, newKey string) (string, error)` | 按文本点分路径在源文本中重命名键。 |
+| `RenameKeySegments(src string, segments []string, newKey string) (string, error)` | 同上，但接受已解码的字面量段（不做额外反转义）。 |
 
 ## 格式化 —— 规范写法，保留注释
 
@@ -225,8 +231,7 @@ out, err := ktav.EditValueSegments(src, []string{"targets", "storagehost", "addr
 - `EditValueSegments` 接受已解码的字面量段 —— 不做额外反转义。数字段在
   Object 中是字符串键，在 Array 中是从零开始的 ASCII 数字索引（允许前导
   零，不允许符号）。空段列表为 `"EditNotFound"`。
-- 仅支持**替换已有值**：没有 create、remove 或 rename。缺失键、越界索引
-  或穿过标量的下降都是 `"EditNotFound"`。
+- `EditValue` 在源码文本中替换已有值。插入、删除或重命名键请参见[插入、删除与重命名](#插入删除与重命名)。缺失键、越界索引或穿过标量都会得到 `"EditNotFound"`。
 
 替换值使用常规的 Go 类型映射（`Dumps` 接受的一切，包括标量）；宿主
 integer 绝不会退化为 float。
@@ -247,6 +252,33 @@ integer 绝不会退化为 float。
   仍可用且保留注释）、或无法在目标上下文中无损表示的值。
 - 每个成功补丁在返回前都会重新解析并做语义验证 —— 不可能悄悄损坏文档。
 - Native（C ABI）与纯 Go 后端逐字节一致；两者都针对同一回归语料运行。
+
+## 插入、删除与重命名
+
+根 `ktav` 包和独立的 `pure` 包提供相同 API：
+
+```go
+func InsertValue(src, textualPath string, replacement any) (string, error)
+func InsertValueSegments(src string, segments []string, replacement any) (string, error)
+func RemoveValue(src, textualPath string) (string, error)
+func RemoveValueSegments(src string, segments []string) (string, error)
+func RenameKey(src, textualPath, newKey string) (string, error)
+func RenameKeySegments(src string, segments []string, newKey string) (string, error)
+```
+
+文本路径使用 `.` 分隔；`\.` 和 `\\` 分别表示字面点号与反斜杠。Segments API 接受字面量、预解码的段，因此 `[]string{"a.b"}` 指向单个键 `a.b`。例如：
+
+```go
+out, err := ktav.InsertValue(src, `list\.item.new`, "value")
+out, err := ktav.RemoveValue(src, `list\.item.0`)
+out, err := ktav.RenameKeySegments(src, []string{"list.item", "old"}, "new.name")
+```
+
+Insert 的最后一段是新 Object 键；父级必须存在且为 Object，新键值对追加在末尾。Remove 可删除叶值或子树；删除数组元素时也会删除其分隔符。插入和删除都不会清除空祖先：例如，从 dotted 源 `a.b: 1\n` 删除最后一个 `b` 后得到 `a: {}\n`（空父级会被显式物化），而不是删除 `a`。Rename 原位修改一个 Object 键，保留键值对的值与位置；`newKey` 是单个字面键，不是路径。重命名为原键是逐字节不变的 no-op。
+
+文本路径无效时返回 `Class == "EditInvalidPath"` 的 `*ktav.Error`。目标/父级不存在、数组索引无效或穿过标量会得到 `EditNotFound`；插入已有键或重命名为同级现有键会得到 `EditAlreadyExists`。向数组插入、重命名数组索引，以及无法用单一区间无损表示的结构情形会得到 `EditUnsupported`。数组索引为从零开始的 ASCII 数字（允许前导零，不允许符号）；Object 中的数字段仍是普通字符串键。Insert 值遵循 `Dumps` 的常规 Go 类型映射。
+
+C-FFI ABI 2 库必须导出全部六个符号：`ktav_insert_value`、`ktav_insert_value_segments`、`ktav_remove_value`、`ktav_remove_value_segments`、`ktav_rename_key` 和 `ktav_rename_key_segments`。缺少这些符号的旧 ABI 2 库与此 Go 绑定不兼容，无法支持这些 API。纯 Go API 独立运行，不加载或依赖原生库；native 与 pure 是相互独立的实现后端。
 
 ### 源文本编辑示例
 

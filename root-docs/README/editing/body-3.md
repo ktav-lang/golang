@@ -1,65 +1,84 @@
 >>>>> lang=en
-- A no-op replacement (the new value equals the old one) returns the
-  source byte-identical, however noncanonical its spelling.
-- Marker transitions are minimal: switching a scalar to a numeric- or
-  keyword-like String toggles only the second `:` of the `::` marker,
-  and the original spacing around it is preserved.
-- Dotted, inline, and block forms are preserved, including a whole
-  inline container replacement and emptied-but-not-collapsed block
-  containers.
-- Inline ancestors expand to block form only when readability requires:
-  a multiline replacement string, growth beyond max(100 Unicode scalar
-  values, the old physical line length), or ≥ 4 inline escapes with ≥ 25%
-  overhead. Untouched nested branches stay inline; new block levels use
-  four spaces and the source EOL.
-- Errors of class `"EditUnsupported"` name pairs with no lossless
-  single-range patch: noncontiguous dotted-key/reopen targets, structural
-  replacement that would drop interior comment lines (leaf edits inside
-  such containers still work and keep the comments), or values without a
-  lossless representation in the target context.
-- Every successful patch is re-parsed and semantically verified before
-  it is returned, so silent corruption is impossible.
-- The native (C ABI) and pure-Go backends agree byte-for-byte; both are
-  exercised against the same regression corpus.
+## Insert, remove, and rename
+
+The root `ktav` package and standalone `pure` package expose the same APIs:
+
+```go
+func InsertValue(src, textualPath string, replacement any) (string, error)
+func InsertValueSegments(src string, segments []string, replacement any) (string, error)
+func RemoveValue(src, textualPath string) (string, error)
+func RemoveValueSegments(src string, segments []string) (string, error)
+func RenameKey(src, textualPath, newKey string) (string, error)
+func RenameKeySegments(src string, segments []string, newKey string) (string, error)
+```
+
+Textual paths use `.` separators; `\.` and `\\` encode a literal dot and backslash. Segment APIs take literal, pre-decoded segments, so `[]string{"a.b"}` addresses the single key `a.b`. For example:
+
+```go
+out, err := ktav.InsertValue(src, `list\.item.new`, "value")
+out, err := ktav.RemoveValue(src, `list\.item.0`)
+out, err := ktav.RenameKeySegments(src, []string{"list.item", "old"}, "new.name")
+```
+
+Insert's final segment is a new Object key, and the parent must exist and be an Object; it appends the pair. Remove accepts a leaf or subtree, and removes an array element together with its delimiter. Neither insertion nor removal prunes empty ancestors: for example, removing the last `b` from dotted source `a.b: 1\n` yields `a: {}\n` (the empty parent is materialized), rather than pruning `a`. Rename changes one Object key in place, preserving the pair's value and position; `newKey` is one literal key, not a path. Renaming to the same key is a byte-identical no-op.
+
+Invalid textual paths return `*ktav.Error` with `Class == "EditInvalidPath"`. Missing targets/parents, invalid array indexes, or descent through scalars produce `EditNotFound`; inserting an existing key or renaming to a sibling key produces `EditAlreadyExists`. Array insertion and array-key rename, and structural cases that cannot be represented by a lossless single-range splice, produce `EditUnsupported`. Array indexes are zero-based ASCII digits (leading zeros allowed; signs are not indexes); numeric segments remain ordinary string keys in Objects. Insert values use the regular `Dumps` Go type mapping.
+
+The C-FFI ABI 2 library must export all six symbols: `ktav_insert_value`, `ktav_insert_value_segments`, `ktav_remove_value`, `ktav_remove_value_segments`, `ktav_rename_key`, and `ktav_rename_key_segments`. An older ABI 2 library without these symbols is incompatible with this Go binding and cannot support these APIs. The pure-Go APIs are standalone and do not load or depend on the native library; native and pure implementations are independent backends.
 
 >>>>> lang=ru
-- No-op (замена равна старому значению) возвращает исходник
-  байт-в-байт, каким бы неканоничным ни было его написание.
-- Переходы маркеров минимальны: замена скаляра на числоподобную или
-  keyword-подобную String переключает только второй `:` маркера `::`,
-  исходные пробелы вокруг сохраняются.
-- Dotted-, inline- и блочные формы сохраняются, включая замену целого
-  inline-контейнера и опустошённый (но не свернувшийся) блочный
-  контейнер.
-- Inline-предки раскрываются в блочную форму только когда требует
-  читаемость: многострочная строка замены, рост строки сверх
-  max(100 Unicode scalar values, прежняя длина физической строки) или
-  ≥ 4 inline-escapes с накладными расходами ≥ 25%. Незатронутые вложенные
-  ветки остаются inline; новые блочные уровни — четыре пробела и EOL
-  источника.
-- Ошибки класса `"EditUnsupported"` описывают пары цель/замена без
-  lossless-патча: noncontiguous dotted-key/reopen-цели, структурная
-  замена, которая потеряла бы внутренние комментарии (правка листа
-  внутри такого контейнера работает и сохраняет комментарии), значения без
-  lossless-представления в контексте цели.
-- Каждый успешный патч перед возвратом повторно парсится и семантически
-  верифицируется — тихое повреждение невозможно.
-- Native (C ABI) и pure-Go бэкенды совпадают байт-в-байт; оба
-  прогоняются через один и тот же regression-корпус.
+## Вставка, удаление и переименование
+
+Пакеты верхнего уровня `ktav` и самостоятельный `pure` предоставляют одинаковые API:
+
+```go
+func InsertValue(src, textualPath string, replacement any) (string, error)
+func InsertValueSegments(src string, segments []string, replacement any) (string, error)
+func RemoveValue(src, textualPath string) (string, error)
+func RemoveValueSegments(src string, segments []string) (string, error)
+func RenameKey(src, textualPath, newKey string) (string, error)
+func RenameKeySegments(src string, segments []string, newKey string) (string, error)
+```
+
+Текстовый путь использует разделитель `.`; `\.` и `\\` задают literal-точку и обратную косую черту. API с сегментами принимают literal, заранее декодированные сегменты: `[]string{"a.b"}` адресует один ключ `a.b`. Например:
+
+```go
+out, err := ktav.InsertValue(src, `list\.item.new`, "value")
+out, err := ktav.RemoveValue(src, `list\.item.0`)
+out, err := ktav.RenameKeySegments(src, []string{"list.item", "old"}, "new.name")
+```
+
+Последний сегмент Insert — новый ключ Object; родитель должен существовать и быть Object, пара добавляется в конец. Remove удаляет лист или поддерево; элемент массива удаляется вместе с разделителем. Вставка и удаление не удаляют пустых предков: например, удаление последнего `b` из dotted-источника `a.b: 1\n` даёт `a: {}\n` (пустой родитель материализуется), а не удаляет `a`. Rename переименовывает один ключ Object на месте, сохраняя значение и позицию пары; `newKey` — один literal-ключ, не путь. Переименование в тот же ключ — побайтный no-op.
+
+Некорректный текстовый путь даёт `*ktav.Error` с `Class == "EditInvalidPath"`. Отсутствующие цель/родитель, неверный индекс массива или спуск через скаляр дают `EditNotFound`; существующий ключ при вставке или совпадающий ключ-сосед при переименовании — `EditAlreadyExists`. Вставка в массив, переименование ключа массива и структурные случаи без lossless-патча одним диапазоном дают `EditUnsupported`. Индексы массива — zero-based ASCII-цифры (ведущие нули разрешены, знаки не являются индексами); числовые сегменты в Object остаются обычными строковыми ключами. Значения Insert используют стандартное Go-сопоставление типов `Dumps`.
+
+Библиотека C-FFI ABI 2 должна экспортировать все шесть символов: `ktav_insert_value`, `ktav_insert_value_segments`, `ktav_remove_value`, `ktav_remove_value_segments`, `ktav_rename_key` и `ktav_rename_key_segments`. Старая библиотека ABI 2 без этих символов несовместима с этой Go-привязкой и не поддерживает эти API. API pure-Go самостоятельны и не загружают native-библиотеку; native и pure — независимые реализации.
 
 >>>>> lang=zh
-- no-op 替换（新值等于旧值）逐字节返回源码，无论其写法多么非规范。
-- 标记切换最小化：把标量换成数字形或关键字形 String 只切换 `::` 标记的
-  第二个 `:`，其周围的原始空格保持不变。
-- dotted、inline 与 block 形式均保留，包括整体替换内联容器，以及清空但
-  不折叠的 block 容器。
-- 仅在可读性需要时才把内联祖先展开为 block 形式：多行替换字符串、行长
-  超过 max(100 个 Unicode scalar values, 原物理行长)，或 ≥ 4 个内联转义
-  且开销 ≥ 25%。未触及的嵌套分支保持内联；新 block 层级使用四个空格和
-  源文件的 EOL。
-- `"EditUnsupported"` 类错误表示不存在无损单区间补丁：dotted-key/reopen
-  形成的不连续目标、会丢失内部注释行的结构性替换（此类容器内的叶编辑
-  仍可用且保留注释）、或无法在目标上下文中无损表示的值。
-- 每个成功补丁在返回前都会重新解析并做语义验证 —— 不可能悄悄损坏文档。
-- Native（C ABI）与纯 Go 后端逐字节一致；两者都针对同一回归语料运行。
+## 插入、删除与重命名
+
+根 `ktav` 包和独立的 `pure` 包提供相同 API：
+
+```go
+func InsertValue(src, textualPath string, replacement any) (string, error)
+func InsertValueSegments(src string, segments []string, replacement any) (string, error)
+func RemoveValue(src, textualPath string) (string, error)
+func RemoveValueSegments(src string, segments []string) (string, error)
+func RenameKey(src, textualPath, newKey string) (string, error)
+func RenameKeySegments(src string, segments []string, newKey string) (string, error)
+```
+
+文本路径使用 `.` 分隔；`\.` 和 `\\` 分别表示字面点号与反斜杠。Segments API 接受字面量、预解码的段，因此 `[]string{"a.b"}` 指向单个键 `a.b`。例如：
+
+```go
+out, err := ktav.InsertValue(src, `list\.item.new`, "value")
+out, err := ktav.RemoveValue(src, `list\.item.0`)
+out, err := ktav.RenameKeySegments(src, []string{"list.item", "old"}, "new.name")
+```
+
+Insert 的最后一段是新 Object 键；父级必须存在且为 Object，新键值对追加在末尾。Remove 可删除叶值或子树；删除数组元素时也会删除其分隔符。插入和删除都不会清除空祖先：例如，从 dotted 源 `a.b: 1\n` 删除最后一个 `b` 后得到 `a: {}\n`（空父级会被显式物化），而不是删除 `a`。Rename 原位修改一个 Object 键，保留键值对的值与位置；`newKey` 是单个字面键，不是路径。重命名为原键是逐字节不变的 no-op。
+
+文本路径无效时返回 `Class == "EditInvalidPath"` 的 `*ktav.Error`。目标/父级不存在、数组索引无效或穿过标量会得到 `EditNotFound`；插入已有键或重命名为同级现有键会得到 `EditAlreadyExists`。向数组插入、重命名数组索引，以及无法用单一区间无损表示的结构情形会得到 `EditUnsupported`。数组索引为从零开始的 ASCII 数字（允许前导零，不允许符号）；Object 中的数字段仍是普通字符串键。Insert 值遵循 `Dumps` 的常规 Go 类型映射。
+
+C-FFI ABI 2 库必须导出全部六个符号：`ktav_insert_value`、`ktav_insert_value_segments`、`ktav_remove_value`、`ktav_remove_value_segments`、`ktav_rename_key` 和 `ktav_rename_key_segments`。缺少这些符号的旧 ABI 2 库与此 Go 绑定不兼容，无法支持这些 API。纯 Go API 独立运行，不加载或依赖原生库；native 与 pure 是相互独立的实现后端。
 
