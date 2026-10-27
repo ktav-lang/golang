@@ -38,6 +38,26 @@ func checkMutationError(t *testing.T, fn mutationCall, class string) {
 	}
 }
 
+func TestMutationRootLayoutPreservesBOMAndSpaces(t *testing.T) {
+	requireCabi(t)
+	native, err := ktav.New(ktav.BackendNative)
+	if err != nil {
+		t.Fatalf("native Operations: %v", err)
+	}
+	pureOps := pure.New()
+	source := "\xef\xbb\xbf  {x: 1}\r\n"
+	want := "\xef\xbb\xbf  {\r\n    x: 1\r\n    y: ((\r\nfirst\r\nsecond\r\n    ))\r\n}\r\n"
+	semantic := map[string]any{"x": int64(1), "y": "first\nsecond"}
+	for _, call := range []mutationCall{
+		func() (string, error) { return native.InsertValue(source, "y", "first\nsecond") },
+		func() (string, error) { return native.InsertValueSegments(source, []string{"y"}, "first\nsecond") },
+		func() (string, error) { return pureOps.InsertValue(source, "y", "first\nsecond") },
+		func() (string, error) { return pureOps.InsertValueSegments(source, []string{"y"}, "first\nsecond") },
+	} {
+		checkMutationOutput(t, call, want, semantic)
+	}
+}
+
 func TestMutationNativePureParity(t *testing.T) {
 	requireCabi(t)
 	native, err := ktav.New(ktav.BackendNative)

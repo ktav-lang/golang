@@ -79,19 +79,7 @@ func layoutAdjustInsert(source, candidate string, root *editNode, segments []str
 // splice position, if any (the Rust layout::inline_owner port).
 func inlineOwner(source string, root *editNode, segments []string, pos int) (int, int, bool, *Error) {
 	if root.inline {
-		lineStart := 0
-		if n := strings.LastIndexAny(source[:pos], "\n\r"); n >= 0 {
-			lineStart = n + 1
-		}
-		line := source[lineStart:editPhysicalLineEnd(source, pos)]
-		body := trimLeadingInline(trimInline(line))
-		body = strings.TrimPrefix(body, "\uFEFF")
-		abs := strings.LastIndex(line, body)
-		if abs < 0 {
-			return 0, 0, false, nil
-		}
-		start := lineStart + abs
-		return start, start + len(body), true, nil
+		return root.open, root.close + 1, true, nil
 	}
 	cur := root
 	for _, segment := range segments {
