@@ -1,0 +1,66 @@
+name: Mutation performance
+
+on:
+  pull_request:
+    paths:
+      - '**.go'
+      - 'go.mod'
+      - 'go.sum'
+      - '.github/workflows/mutation-perf.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  compare:
+    name: Native and pure mutation baseline / candidate
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: baseline
+          submodules: recursive
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          path: candidate
+          submodules: recursive
+          persist-credentials: false
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+          cache: false
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build pinned native library
+        working-directory: candidate
+        run: |
+          cargo generate-lockfile
+          cargo build --release --locked -p ktav-cabi
+      - name: Compare identical benchmarks on one runner
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp candidate/mutation_benchmark_test.go baseline/mutation_benchmark_test.go
+          mkdir results
+          go version | tee results/environment.txt
+          rustc --version --verbose | tee -a results/environment.txt
+          cargo --version | tee -a results/environment.txt
+          printf 'base=%s\nhead=%s\n' '${{ github.event.pull_request.base.sha }}' '${{ github.event.pull_request.head.sha }}' | tee -a results/environment.txt
+          export KTAV_LIB_PATH="$PWD/candidate/target/release/libktav_cabi.so"
+          for pair in 0 1 2; do
+            if [ "$pair" = 1 ]; then order='candidate baseline'; else order='baseline candidate'; fi
+            for label in $order; do
+              (cd "$label" && go test -run '^$' -bench '^BenchmarkSourceMutations$' -benchtime=60ms -count=1 -timeout=5m .) | tee "results/$label-$pair.txt"
+            done
+          done
+          printf 'Paired same-runner measurements; timing is informational, not a pass/fail gate. See raw artifacts.\n' >> "$GITHUB_STEP_SUMMARY"
+      - name: Preserve raw measurements
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mutation-performance
+          path: results/
+          if-no-files-found: warn
