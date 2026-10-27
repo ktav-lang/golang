@@ -70,8 +70,8 @@ func TestInsertInlineReadabilityExactOracles(t *testing.T) {
 		want  string
 	}{
 		{[]string{"a", "long"}, strings.Repeat("x", 120), "a: {\n    x: 1\n    long: " + strings.Repeat("x", 120) + "\n}\n"},
-		{[]string{"a", "multi"}, "first\nsecond", "a: {\n    x: 1\n    multi: (\n        first\n        second\n    )\n}\n"},
-		{[]string{"a", "dense"}, strings.Repeat("\\", 8), "a: {\n    x: 1\n    dense: (\n        " + strings.Repeat("\\", 8) + "\n    )\n}\n"},
+		{[]string{"a", "multi"}, "first\nsecond", "a: {\n    x: 1\n    multi: ((\nfirst\nsecond\n    ))\n}\n"},
+		{[]string{"a", "dense"}, strings.Repeat("\\", 8), "a: {\n    x: 1\n    dense: " + strings.Repeat("\\", 8) + "\n}\n"},
 	} {
 		source := "a: {x: 1}\n"
 		got, err := op().InsertValue(source, strings.Join(tc.path, "."), tc.value)

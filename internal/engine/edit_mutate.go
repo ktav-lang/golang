@@ -531,7 +531,12 @@ func mutateInsert(text string, orig *pvalue, segs []string, repl *pvalue) ([]byt
 		return nil, inlineErr
 	}
 	pair := keyBuilder.String() + ": " + inlineValue
-	if parent.inline && (parent.slot != nil || len(parents) == 0) {
+	inlineParent := parent.inline && (parent.slot != nil || len(parents) == 0)
+	if parent.slot != nil && (parent.slot.kind == slotPair || parent.slot.kind == slotItem) {
+		b0, b1 := editSlotBody(parent.slot)
+		inlineParent = b0 >= 0 && b0 < b1 && b1 <= len(text) && isCompoundBody(text[b0:b1])
+	}
+	if inlineParent {
 		bodyStart := from
 		if parent.slot != nil {
 			from = parent.slot.b1 - 1
@@ -628,7 +633,7 @@ func mutateInsert(text string, orig *pvalue, segs []string, repl *pvalue) ([]byt
 		return nil, editUnsupported("parent has no contiguous insertion point")
 	}
 	out := text[:from] + ins + text[to:]
-	if parent.inline {
+	if inlineParent {
 		adjusted, lerr := layoutAdjustInsert(text, out, root, parents, repl, from, to, len(ins))
 		if lerr != nil {
 			return nil, lerr
