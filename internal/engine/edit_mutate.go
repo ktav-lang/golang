@@ -144,7 +144,7 @@ func mutateRename(text string, orig *pvalue, segs []string, newKey string) ([]by
 	first := len(pn.table.entries) > 0 && pn.table.entries[0].key == key
 	pushEscapedKeySegment(newKey, len(segs) == 1 && first, &enc)
 	out := text[:a+segStart] + enc.String() + text[a+segEnd:]
-	expected := clonePV(orig)
+	expected := orig
 	renamePVObject(editLookupValue(expected, segs[:len(segs)-1]).obj, key, newKey)
 	if verifyErr := verifyMutatedKeyOrder(out, expected); verifyErr != nil {
 		return nil, verifyErr
@@ -165,7 +165,7 @@ func mutateRemove(text string, orig *pvalue, segs []string) ([]byte, error) {
 	if descendErr != nil {
 		return nil, descendErr
 	}
-	expected := clonePV(orig)
+	expected := orig
 	p := editLookupValue(expected, segs[:len(segs)-1])
 	if p == nil {
 		return nil, editNotFound()
@@ -507,7 +507,7 @@ func mutateInsert(text string, orig *pvalue, segs []string, repl *pvalue) ([]byt
 	if parent.kind != kObj {
 		return nil, editNotFound()
 	}
-	expected := clonePV(orig)
+	expected := orig
 	editLookupValue(expected, parents).obj.insertLeaf(key, clonePV(repl))
 	var from, to int
 	ins := ""
