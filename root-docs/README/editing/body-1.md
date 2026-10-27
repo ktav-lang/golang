@@ -18,6 +18,17 @@ out, err := ktav.EditValueSegments(src, []string{"targets", "storagehost", "addr
 
 Path rules:
 
+- `EditValue` takes a textual path (`key1.key2.0.key4`). Inside a
+  segment `\.` is a literal dot and `\\` a literal backslash; any other
+  escape, a trailing lone backslash, or an empty segment is an
+  `*ktav.Error` with `Class == "EditInvalidPath"` whose `Body` is the
+  UTF-8 byte offset of the problem inside the path argument.
+- `EditValueSegments` takes pre-decoded literal segments — no additional
+  unescaping. A numeric segment is a string key inside an Object and a
+  zero-based ASCII-digit index inside an Array (leading zeros allowed,
+  signs are not indexes). An empty segment list is `"EditNotFound"`.
+- `EditValue` replaces an existing value in source text. For insertion, removal, or key renaming, see [Insert, remove, and rename](#insert-remove-and-rename). A missing key, an out-of-bounds index, or descent through a scalar is `"EditNotFound"`.
+
 >>>>> lang=ru
 ## Правка исходника
 
@@ -38,6 +49,17 @@ out, err := ktav.EditValueSegments(src, []string{"targets", "storagehost", "addr
 
 Правила путей:
 
+- `EditValue` принимает текстовый путь (`key1.key2.0.key4`). Внутри
+  сегмента `\.` — literal точка, `\\` — literal backslash; любой другой
+  escape, хвостовой `\` или пустой сегмент — `*ktav.Error` с
+  `Class == "EditInvalidPath"`, где `Body` — UTF-8 byte-офсет проблемы
+  внутри аргумента пути.
+- `EditValueSegments` принимает уже декодированные literal-сегменты —
+  без повторного unescape. Числовой сегмент — строковый ключ в Object и
+  zero-based индекс из ASCII-цифр в Array (ведущие нули допустимы, знаки
+  — нет). Пустой список сегментов — `"EditNotFound"`.
+- `EditValue` заменяет существующее значение в исходном тексте. Для вставки, удаления и переименования ключа см. [Вставка, удаление и переименование](#вставка-удаление-и-переименование). Отсутствующий ключ, индекс вне диапазона или спуск через скаляр — `"EditNotFound"`.
+
 >>>>> lang=zh
 ## 源码编辑
 
@@ -55,4 +77,13 @@ out, err := ktav.EditValueSegments(src, []string{"targets", "storagehost", "addr
 ```
 
 路径规则：
+
+- `EditValue` 接受文本路径（`key1.key2.0.key4`）。段内 `\.` 表示字面量
+  点号，`\\` 表示字面量反斜杠；任何其他转义、结尾的孤立 `\` 或空段都会
+  得到 `Class == "EditInvalidPath"` 的 `*ktav.Error`，其 `Body` 是问题在
+  路径参数中的 UTF-8 字节偏移。
+- `EditValueSegments` 接受已解码的字面量段 —— 不做额外反转义。数字段在
+  Object 中是字符串键，在 Array 中是从零开始的 ASCII 数字索引（允许前导
+  零，不允许符号）。空段列表为 `"EditNotFound"`。
+- `EditValue` 在源码文本中替换已有值。插入、删除或重命名键请参见[插入、删除与重命名](#插入删除与重命名)。缺失键、越界索引或穿过标量都会得到 `"EditNotFound"`。
 

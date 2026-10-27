@@ -26,6 +26,18 @@ itself — for the latter see
   loader now gates on `ktav_abi_version()` == 2 (user-approved bump
   from 1) and refuses older libraries with a clear version error —
   never a silent pure fallback. Package versions are unchanged.
+- Source editing also adds `InsertValue` / `InsertValueSegments`,
+  `RemoveValue` / `RemoveValueSegments`, and `RenameKey` /
+  `RenameKeySegments` to both the root Go package and standalone `pure`.
+  Insert appends a new Object pair; remove deletes array elements with
+  their delimiter and never prunes empty ancestors (removing the last
+  `b` from `a.b: 1\n` yields `a: {}\n`). Rename changes an Object key
+  in place. The C ABI 2 library must export `ktav_insert_value`,
+  `ktav_insert_value_segments`, `ktav_remove_value`,
+  `ktav_remove_value_segments`, `ktav_rename_key`, and
+  `ktav_rename_key_segments`; an older ABI 2 library lacking any of
+  them is incompatible. Pure-Go remains independent of native.
+- Exact API signatures (in both packages): `InsertValue(src, textualPath string, replacement any) (string, error)`, `InsertValueSegments(src string, segments []string, replacement any) (string, error)`, `RemoveValue(src, textualPath string) (string, error)`, `RemoveValueSegments(src string, segments []string) (string, error)`, `RenameKey(src, textualPath, newKey string) (string, error)`, and `RenameKeySegments(src string, segments []string, newKey string) (string, error)`. Textual paths use `.` with `\.`/`\\` escaping; segment arrays and `newKey` are literal keys. Invalid textual paths return `EditInvalidPath`; missing targets/parents, bad array indexes, or scalar descent return `EditNotFound`; collisions return `EditAlreadyExists`. Array insertion/rename and non-lossless structural splices return `EditUnsupported`. Array indexes are zero-based ASCII digits (leading zeroes allowed); numeric Object segments are strings. Insert takes the normal `Dumps` Go type mapping. All 18 exported ABI symbols require ABI version 2; the six mutation symbols are listed above. Native and pure are independent backends.
 - Spec 0.9 corpus (412 fixtures; invalid grew to 162 with 72 new
   diagnostics09 EOF + malformed-UTF-8 cases) is wired in with a
   fixture-driven regression runner validating `expected_location`

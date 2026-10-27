@@ -135,6 +135,12 @@ A complete runnable version lives in [`examples/basic`](examples/basic/main.go).
 | `FormatSource(src string) (string, error)` | Format Ktav source into its normalised spelling, **keeping every comment**. See below. |
 | `EditValue(src, path string, replacement any) (string, error)` | Replace the value addressed by the textual dotted path **in the source text** and return the patched source. See [Source editing](#source-editing). |
 | `EditValueSegments(src string, segments []string, replacement any) (string, error)` | Same, with pre-decoded literal segments (no extra unescaping). |
+| `InsertValue(src, path string, value any) (string, error)` | Insert a value at the textual dotted path in the source text. |
+| `InsertValueSegments(src string, segments []string, value any) (string, error)` | Same, with pre-decoded literal segments (no extra unescaping). |
+| `RemoveValue(src, path string) (string, error)` | Remove the value addressed by the textual dotted path from the source text. |
+| `RemoveValueSegments(src string, segments []string) (string, error)` | Same, with pre-decoded literal segments (no extra unescaping). |
+| `RenameKey(src, path, newKey string) (string, error)` | Rename the key addressed by the textual dotted path in the source text. |
+| `RenameKeySegments(src string, segments []string, newKey string) (string, error)` | Same, with pre-decoded literal segments (no extra unescaping). |
 
 ## Formatting — canonical spelling, comments kept
 
@@ -231,9 +237,7 @@ Path rules:
   unescaping. A numeric segment is a string key inside an Object and a
   zero-based ASCII-digit index inside an Array (leading zeros allowed,
   signs are not indexes). An empty segment list is `"EditNotFound"`.
-- Only **replacement of an existing value** is supported: no create,
-  remove, or rename. A missing key, an out-of-bounds index, or descent
-  through a scalar is `"EditNotFound"`.
+- `EditValue` replaces an existing value in source text. For insertion, removal, or key renaming, see [Insert, remove, and rename](#insert-remove-and-rename). A missing key, an out-of-bounds index, or descent through a scalar is `"EditNotFound"`.
 
 Replacement values use the ordinary Go type mapping (`Dumps` accepts
 them, scalars included); a host integer never degrades to a float.
@@ -262,6 +266,33 @@ Guarantees:
   it is returned, so silent corruption is impossible.
 - The native (C ABI) and pure-Go backends agree byte-for-byte; both are
   exercised against the same regression corpus.
+
+## Insert, remove, and rename
+
+The root `ktav` package and standalone `pure` package expose the same APIs:
+
+```go
+func InsertValue(src, textualPath string, replacement any) (string, error)
+func InsertValueSegments(src string, segments []string, replacement any) (string, error)
+func RemoveValue(src, textualPath string) (string, error)
+func RemoveValueSegments(src string, segments []string) (string, error)
+func RenameKey(src, textualPath, newKey string) (string, error)
+func RenameKeySegments(src string, segments []string, newKey string) (string, error)
+```
+
+Textual paths use `.` separators; `\.` and `\\` encode a literal dot and backslash. Segment APIs take literal, pre-decoded segments, so `[]string{"a.b"}` addresses the single key `a.b`. For example:
+
+```go
+out, err := ktav.InsertValue(src, `list\.item.new`, "value")
+out, err := ktav.RemoveValue(src, `list\.item.0`)
+out, err := ktav.RenameKeySegments(src, []string{"list.item", "old"}, "new.name")
+```
+
+Insert's final segment is a new Object key, and the parent must exist and be an Object; it appends the pair. Remove accepts a leaf or subtree, and removes an array element together with its delimiter. Neither insertion nor removal prunes empty ancestors: for example, removing the last `b` from dotted source `a.b: 1\n` yields `a: {}\n` (the empty parent is materialized), rather than pruning `a`. Rename changes one Object key in place, preserving the pair's value and position; `newKey` is one literal key, not a path. Renaming to the same key is a byte-identical no-op.
+
+Invalid textual paths return `*ktav.Error` with `Class == "EditInvalidPath"`. Missing targets/parents, invalid array indexes, or descent through scalars produce `EditNotFound`; inserting an existing key or renaming to a sibling key produces `EditAlreadyExists`. Array insertion and array-key rename, and structural cases that cannot be represented by a lossless single-range splice, produce `EditUnsupported`. Array indexes are zero-based ASCII digits (leading zeros allowed; signs are not indexes); numeric segments remain ordinary string keys in Objects. Insert values use the regular `Dumps` Go type mapping.
+
+The C-FFI ABI 2 library must export all six symbols: `ktav_insert_value`, `ktav_insert_value_segments`, `ktav_remove_value`, `ktav_remove_value_segments`, `ktav_rename_key`, and `ktav_rename_key_segments`. An older ABI 2 library without these symbols is incompatible with this Go binding and cannot support these APIs. The pure-Go APIs are standalone and do not load or depend on the native library; native and pure implementations are independent backends.
 
 ### Source-edit cookbook
 

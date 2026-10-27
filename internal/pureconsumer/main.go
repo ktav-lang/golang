@@ -161,7 +161,51 @@ func runSmoke() error {
 	} else if pe, ok := err.(*pure.Error); !ok || pe.Class != "EditNotFound" {
 		return fmt.Errorf("EditValue error = %#v, want EditNotFound", err)
 	}
-	_, err = pure.Loads("anchor: ok\njust some text\n")
+	_, err = pure.Loads("anchor: ok\njust some text\n") // Mutation consumer coverage: public pure package and its Operations
+	if err == nil {
+		return fmt.Errorf("package Loads: expected MissingSeparator")
+	}
+	// API must preserve reference-pinned source bytes for both path forms.
+	if out, err := pure.InsertValue("a: {x: 1}\n", "a.y", "two"); err != nil || out != "a: {x: 1, y: two}\n" {
+		return fmt.Errorf("InsertValue = %q, %v", out, err)
+	}
+	if out, err := ops.InsertValueSegments("a: {}\n", []string{"a", "b.c"}, "v"); err != nil || out != "a: {\"b.c\": v}\n" {
+		return fmt.Errorf("InsertValueSegments = %q, %v", out, err)
+	}
+	if out, err := pure.RemoveValue("a: 1\nb: 2\n", "a"); err != nil || out != "b: 2\n" {
+		return fmt.Errorf("RemoveValue = %q, %v", out, err)
+	}
+	if out, err := ops.RemoveValueSegments("a: {b: 1}\n", []string{"a", "b"}); err != nil || out != "a: {}\n" {
+		return fmt.Errorf("RemoveValueSegments = %q, %v", out, err)
+	}
+	if out, err := pure.RenameKey("a: 1\n", "a", `new.key`); err != nil || out != "\"new.key\": 1\n" {
+		return fmt.Errorf("RenameKey = %q, %v", out, err)
+	}
+	if out, err := ops.RenameKeySegments("a: {b: 1}\n", []string{"a", "b"}, `new\key`); err != nil || out != "a: {new\\\\key: 1}\n" {
+		return fmt.Errorf("RenameKeySegments = %q, %v", out, err)
+	}
+	for _, call := range []struct {
+		name      string
+		wantClass string
+		fn        func() (string, error)
+	}{
+		{"insert-exists", "EditAlreadyExists", func() (string, error) { return pure.InsertValue("a: 1\n", "a", "v") }},
+		{"insert-array", "EditUnsupported", func() (string, error) { return ops.InsertValueSegments("a: [1]\n", []string{"a", "1"}, "v") }},
+		{"remove-missing", "EditNotFound", func() (string, error) { return ops.RemoveValueSegments("a: 1\n", []string{"missing"}) }},
+		{"rename-missing", "EditNotFound", func() (string, error) { return pure.RenameKey("a: 1\n", "missing", "b") }},
+		{"rename-collision", "EditAlreadyExists", func() (string, error) { return ops.RenameKeySegments("a: 1\nb: 2\n", []string{"a"}, "b") }},
+		{"rename-array-index", "EditUnsupported", func() (string, error) { return pure.RenameKey("a: [x]\n", "a.0", "b") }},
+	} {
+		if _, err := call.fn(); err == nil {
+			return fmt.Errorf("%s: expected %s error", call.name, call.wantClass)
+		} else if pe, ok := err.(*pure.Error); !ok || pe.Class != call.wantClass {
+			return fmt.Errorf("%s: error = %#v, want %s", call.name, err, call.wantClass)
+		}
+	}
+	if out, err := pure.RenameKey("a: 1\nb: 2\n", "a", "a"); err != nil || out != "a: 1\nb: 2\n" {
+		return fmt.Errorf("RenameKey no-op = %q, %v", out, err)
+	}
+
 	var structured *pure.Error
 	if !errors.As(err, &structured) || structured.Class != "MissingSeparator" || structured.Span == nil || structured.Span.Start >= structured.Span.End {
 		return fmt.Errorf("structured error = %#v (%v)", structured, err)

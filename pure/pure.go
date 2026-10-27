@@ -29,3 +29,41 @@ func EditValue(src, textualPath string, replacement any) (string, error) {
 func EditValueSegments(src string, segments []string, replacement any) (string, error) {
 	return engine.New().EditValueSegments(src, segments, replacement)
 }
+
+// InsertValue inserts a NEW key/value pair at the textual dotted path
+// (last segment is the new Object key). See the ktav package's
+// InsertValue for the full contract; this pure entry never touches the
+// native library.
+func InsertValue(src, textualPath string, replacement any) (string, error) {
+	return engine.New().InsertValue(src, textualPath, replacement)
+}
+
+// InsertValueSegments is InsertValue with pre-decoded literal segments:
+// no additional unescaping is performed.
+func InsertValueSegments(src string, segments []string, replacement any) (string, error) {
+	return engine.New().InsertValueSegments(src, segments, replacement)
+}
+
+// RemoveValue deletes the value addressed by the textual dotted path,
+// splicing only the target's byte range. See the ktav package's
+// RemoveValue for the full contract.
+func RemoveValue(src, textualPath string) (string, error) {
+	return engine.New().RemoveValue(src, textualPath)
+}
+
+// RemoveValueSegments is RemoveValue with pre-decoded literal segments.
+func RemoveValueSegments(src string, segments []string) (string, error) {
+	return engine.New().RemoveValueSegments(src, segments)
+}
+
+// RenameKey renames the Object key addressed by the textual dotted path
+// in place; newKey is ONE literal key. See the ktav package's RenameKey
+// for the full contract.
+func RenameKey(src, textualPath, newKey string) (string, error) {
+	return engine.New().RenameKey(src, textualPath, newKey)
+}
+
+// RenameKeySegments is RenameKey with pre-decoded literal segments.
+func RenameKeySegments(src string, segments []string, newKey string) (string, error) {
+	return engine.New().RenameKeySegments(src, segments, newKey)
+}

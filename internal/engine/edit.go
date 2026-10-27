@@ -90,6 +90,9 @@ func pureEditValueBytes(src, path, replacement []byte) ([]byte, error) {
 	if werr != nil {
 		return nil, werr
 	}
+	if werr = validateEditIntegerDomain(repl); werr != nil {
+		return nil, werr
+	}
 	out, eerr := applyEdit(text, original.(*pvalue), segments, repl)
 	if eerr != nil {
 		return nil, eerr
@@ -132,6 +135,9 @@ func pureEditValueSegmentsBytes(src, path, replacement []byte) ([]byte, error) {
 	}
 	repl, werr := ingestWireValue(replacement)
 	if werr != nil {
+		return nil, werr
+	}
+	if werr = validateEditIntegerDomain(repl); werr != nil {
 		return nil, werr
 	}
 	out, eerr := applyEdit(text, original.(*pvalue), segments, repl)

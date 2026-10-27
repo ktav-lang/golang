@@ -11,7 +11,199 @@ import (
 	"testing"
 )
 
-func op() *Operations { return New() }
+func TestRemovePreservesNeighbouringCommentsAndRejectsInternalComments(t *testing.T) {
+	for _, tc := range []struct {
+		name, source, path, want string
+		unsupported              bool
+	}{
+		{"comments around scalar", "## before\na: 1\n## after\nb: 2\n", "a", "## before\n## after\nb: 2\n", false},
+		{"compound internal comment", "a: {\n  ## keep?\n  b: 2\n}\nc: 3\n", "a", "", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := op().RemoveValue(tc.source, tc.path)
+			if tc.unsupported {
+				if err == nil || err.(*Error).Class != "EditUnsupported" {
+					t.Fatalf("RemoveValue error = %v; want EditUnsupported", err)
+				}
+				return
+			}
+			if err != nil || got != tc.want {
+				t.Fatalf("RemoveValue = %q, %v; want %q", got, err, tc.want)
+			}
+		})
+	}
+}
+
+func TestRemoveDottedLeafMaterializesEmptyParent(t *testing.T) {
+	want := func(entries ...oentry) *pvalue {
+		obj := newOmap()
+		for _, entry := range entries {
+			obj.insertLeaf(entry.key, entry.val)
+		}
+		return &pvalue{kind: kObj, obj: obj}
+	}
+	obj := func(entries ...oentry) *pvalue { return want(entries...) }
+	for _, tc := range []struct {
+		source, path, want string
+		semantic           *pvalue
+	}{
+		{"a.b: 1\nc: 2\n", "a.b", "a: {}\nc: 2\n", want(oentry{key: "a", val: obj()}, oentry{key: "c", val: pvInt("2")})},
+		{"a.b.c: 1\nx: 2\n", "a.b.c", "a.b: {}\nx: 2\n", want(oentry{key: "a", val: obj(oentry{key: "b", val: obj()})}, oentry{key: "x", val: pvInt("2")})},
+		{"root: {\n  a.b: 1\n  c: 2\n}\n", "root.a.b", "root: {\n  a: {}\n  c: 2\n}\n", want(oentry{key: "root", val: obj(oentry{key: "a", val: obj()}, oentry{key: "c", val: pvInt("2")})})},
+		{"a.b: 1\r\nc: 2\r\n", "a.b", "a: {}\r\nc: 2\r\n", want(oentry{key: "a", val: obj()}, oentry{key: "c", val: pvInt("2")})},
+	} {
+		got, err := op().RemoveValue(tc.source, tc.path)
+		if err != nil || got != tc.want {
+			t.Fatalf("RemoveValue output = %q, %v; want %q", got, err, tc.want)
+		}
+		gotDoc, _, parseErr := parseDoc(got, false, false)
+		if parseErr != nil || !pvEqual(gotDoc.(*pvalue), tc.semantic) {
+			t.Fatalf("RemoveValue semantic tree mismatch: %v", parseErr)
+		}
+	}
+}
+
+func TestInsertInlineReadabilityExactOracles(t *testing.T) {
+	for _, tc := range []struct {
+		path  []string
+		value any
+		want  string
+	}{
+		{[]string{"a", "long"}, strings.Repeat("x", 120), "a: {\n    x: 1\n    long: " + strings.Repeat("x", 120) + "\n}\n"},
+		{[]string{"a", "multi"}, "first\nsecond", "a: {\n    x: 1\n    multi: (\n        first\n        second\n    )\n}\n"},
+		{[]string{"a", "dense"}, strings.Repeat("\\", 8), "a: {\n    x: 1\n    dense: (\n        " + strings.Repeat("\\", 8) + "\n    )\n}\n"},
+	} {
+		source := "a: {x: 1}\n"
+		got, err := op().InsertValue(source, strings.Join(tc.path, "."), tc.value)
+		if err != nil || got != tc.want {
+			t.Fatalf("InsertValue(%v) = %q, %v; want %q", tc.path, got, err, tc.want)
+		}
+		// Independent semantic expectation: insertion adds exactly the selected member.
+		wantDoc, _, parseErr := parseDoc("a: {x: 1}\n", false, false)
+		if parseErr != nil {
+			t.Fatalf("semantic oracle source parse: %v", parseErr)
+		}
+		wantTree := wantDoc.(*pvalue)
+		wantTree.obj.get("a").obj.insertLeaf(tc.path[1], pvStr(tc.value.(string)))
+		gotDoc, _, parseErr := parseDoc(got, false, false)
+		if parseErr != nil || !pvEqual(gotDoc.(*pvalue), wantTree) {
+			t.Fatalf("InsertValue(%v) semantic tree mismatch: %v", tc.path, parseErr)
+		}
+	}
+}
+
+func TestMutateRenamePreservesQuotedAndDottedKeySyntax(t *testing.T) {
+	for _, tc := range []struct {
+		src       string
+		segments  []string
+		key, want string
+		expected  *pvalue
+	}{
+		{`'a,b': 1` + "\n", []string{"a,b"}, "comma,key", `"comma,key": 1` + "\n", renameExpected("comma,key", "1")},
+		{"\"a}b\": 1\n", []string{"a}b"}, "brace.key", `"brace.key": 1` + "\n", renameExpected("brace.key", "1")},
+		{"`a.b`: 1\n", []string{"a.b"}, "new", "new: 1\n", renameExpected("new", "1")},
+		{"a.a: 1\n", []string{"a", "a"}, "x", "a.x: 1\n", renameExpectedNested("a", "x", "1")},
+		{"a . b : 1\n", []string{"a", "b"}, "m", "a . m : 1\n", renameExpectedNested("a", "m", "1")},
+		{"a: {old: 1}\n", []string{"a", "old"}, "new", "a: {new: 1}\n", renameExpectedNested("a", "new", "1")},
+	} {
+		wire, err := marshalSegmentsWire(tc.segments)
+		if err != nil {
+			t.Fatalf("marshal segments: %v", err)
+		}
+		got, err := pureRenameKeySegmentsBytes([]byte(tc.src), wire, []byte(tc.key))
+		if err != nil || string(got) != tc.want {
+			t.Errorf("rename segments %q = %q, %v; want %q", tc.segments, got, err, tc.want)
+			continue
+		}
+		parsed, _, parseErr := parseDoc(string(got), false, false)
+		if parseErr != nil || !pvEqual(parsed.(*pvalue), tc.expected) {
+			t.Errorf("independent semantic value mismatch: %v", parseErr)
+		}
+	}
+}
+
+func TestRenameSpacedDottedKeyTextualAndSegmentsOracles(t *testing.T) {
+	source := "a . b : 1\n"
+	wantText := "a . m : 1\n"
+	wantSemantic := renameExpectedNested("a", "m", "1")
+	for _, tc := range []struct {
+		name   string
+		rename func() (string, error)
+	}{
+		{"textual", func() (string, error) { return op().RenameKey(source, "a.b", "m") }},
+		{"segments", func() (string, error) { return op().RenameKeySegments(source, []string{"a", "b"}, "m") }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := tc.rename()
+			if err != nil || got != wantText {
+				t.Fatalf("rename = %q, %v; want %q", got, err, wantText)
+			}
+			parsed, _, parseErr := parseDoc(got, false, false)
+			if parseErr != nil || !pvEqual(parsed.(*pvalue), wantSemantic) {
+				t.Fatalf("semantic oracle mismatch: %v", parseErr)
+			}
+		})
+	}
+}
+
+func TestMutateRenameNoopCollisionAndArray(t *testing.T) {
+	for _, tc := range []struct {
+		src   string
+		path  []string
+		key   string
+		class string
+	}{
+		{"a: 1\nb: 2\n", []string{"a"}, "a", ""},
+		{"a: 1\nb: 2\n", []string{"a"}, "b", "EditAlreadyExists"},
+		{"scalar: 1\n", []string{"scalar", "child"}, "x", "EditNotFound"},
+		{"a: [x]\n", []string{"a", "0"}, "b", "EditUnsupported"},
+	} {
+		wire, err := marshalSegmentsWire(tc.path)
+		if err != nil {
+			t.Fatalf("marshal segments: %v", err)
+		}
+		got, err := pureRenameKeySegmentsBytes([]byte(tc.src), wire, []byte(tc.key))
+		if tc.class == "" {
+			if err != nil || string(got) != tc.src {
+				t.Errorf("no-op = %q, %v", got, err)
+			}
+			continue
+		}
+		if err == nil || err.(*Error).Class != tc.class {
+			t.Errorf("error = %v; want %s", err, tc.class)
+		}
+	}
+}
+
+func renameExpected(key, integer string) *pvalue {
+	root := &pvalue{kind: kObj, obj: newOmap()}
+	root.obj.insertLeaf(key, pvInt(integer))
+	return root
+}
+
+func renameExpectedNested(parent, key, integer string) *pvalue {
+	root := &pvalue{kind: kObj, obj: newOmap()}
+	child := &pvalue{kind: kObj, obj: newOmap()}
+	child.obj.insertLeaf(key, pvInt(integer))
+	root.obj.insertLeaf(parent, child)
+	return root
+}
+
+func TestMutateFocusedLossless(t *testing.T) {
+	src := "a: 1\nb: 2\n"
+	got, err := op().RenameKey(src, "a", "renamed")
+	if err != nil || got != "renamed: 1\nb: 2\n" {
+		t.Fatalf("rename = %q, %v", got, err)
+	}
+	got, err = op().RemoveValue(src, "a")
+	if err != nil || got != "b: 2\n" {
+		t.Fatalf("remove = %q, %v", got, err)
+	}
+	got, err = op().InsertValue(src, "c", 3)
+	if err != nil || got != "a: 1\nb: 2\nc: 3\n" {
+		t.Fatalf("insert = %q, %v", got, err)
+	}
+}
 
 func editCheck(t *testing.T, source string, path []string, replacement any, expected string) {
 	t.Helper()
@@ -37,9 +229,9 @@ func editCheck(t *testing.T, source string, path []string, replacement any, expe
 		textual += esc
 	}
 	// Expected value tree: parse the source, replace the target.
-	wantDoc, _, err := parseDoc(source, false, false)
-	if err != nil {
-		t.Fatalf("test bug: source does not parse: %v", err)
+	wantDoc, _, parseErr := parseDoc(source, false, false)
+	if parseErr != nil {
+		t.Fatalf("test bug: source does not parse: %v", parseErr)
 	}
 	want := wantDoc.(*pvalue)
 	wireRepl, werr := encodeEditReplacementTagged(replacement)

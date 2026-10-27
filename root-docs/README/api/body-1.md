@@ -13,6 +13,12 @@
 | `FormatSource(src string) (string, error)` | Format Ktav source into its normalised spelling, **keeping every comment**. See below. |
 | `EditValue(src, path string, replacement any) (string, error)` | Replace the value addressed by the textual dotted path **in the source text** and return the patched source. See [Source editing](#source-editing). |
 | `EditValueSegments(src string, segments []string, replacement any) (string, error)` | Same, with pre-decoded literal segments (no extra unescaping). |
+| `InsertValue(src, path string, value any) (string, error)` | Insert a value at the textual dotted path in the source text. |
+| `InsertValueSegments(src string, segments []string, value any) (string, error)` | Same, with pre-decoded literal segments (no extra unescaping). |
+| `RemoveValue(src, path string) (string, error)` | Remove the value addressed by the textual dotted path from the source text. |
+| `RemoveValueSegments(src string, segments []string) (string, error)` | Same, with pre-decoded literal segments (no extra unescaping). |
+| `RenameKey(src, path, newKey string) (string, error)` | Rename the key addressed by the textual dotted path in the source text. |
+| `RenameKeySegments(src string, segments []string, newKey string) (string, error)` | Same, with pre-decoded literal segments (no extra unescaping). |
 
 >>>>> lang=ru
 ## API
@@ -29,6 +35,12 @@
 | `FormatSource(src string) (string, error)` | Отформатировать Ktav-источник в нормализованное написание, **сохраняя все комментарии**. См. ниже. |
 | `EditValue(src, path string, replacement any) (string, error)` | Заменить значение по текстовому dotted-пути **в исходном тексте** и вернуть исправленный источник. См. [Правка исходника](#правка-исходника). |
 | `EditValueSegments(src string, segments []string, replacement any) (string, error)` | То же с уже декодированными literal-сегментами (без повторного unescape). |
+| `InsertValue(src, path string, value any) (string, error)` | Вставить значение по текстовому dotted-пути в исходный текст. |
+| `InsertValueSegments(src string, segments []string, value any) (string, error)` | То же с уже декодированными literal-сегментами (без повторного unescape). |
+| `RemoveValue(src, path string) (string, error)` | Удалить значение по текстовому dotted-пути из исходного текста. |
+| `RemoveValueSegments(src string, segments []string) (string, error)` | То же с уже декодированными literal-сегментами (без повторного unescape). |
+| `RenameKey(src, path, newKey string) (string, error)` | Переименовать ключ по текстовому dotted-пути в исходном тексте. |
+| `RenameKeySegments(src string, segments []string, newKey string) (string, error)` | То же с уже декодированными literal-сегментами (без повторного unescape). |
 
 >>>>> lang=zh
 ## API
@@ -45,4 +57,10 @@
 | `FormatSource(src string) (string, error)` | 把 Ktav 源文本格式化为规范化写法，**保留全部注释**。见下文。 |
 | `EditValue(src, path string, replacement any) (string, error)` | 按文本点分路径**在源文本中**替换值，返回修改后的源码。见[源码编辑](#源码编辑)。 |
 | `EditValueSegments(src string, segments []string, replacement any) (string, error)` | 同上，但接受已解码的字面量段（不做额外反转义）。 |
+| `InsertValue(src, path string, value any) (string, error)` | 按文本点分路径在源文本中插入值。 |
+| `InsertValueSegments(src string, segments []string, value any) (string, error)` | 同上，但接受已解码的字面量段（不做额外反转义）。 |
+| `RemoveValue(src, path string) (string, error)` | 按文本点分路径从源文本中删除值。 |
+| `RemoveValueSegments(src string, segments []string) (string, error)` | 同上，但接受已解码的字面量段（不做额外反转义）。 |
+| `RenameKey(src, path, newKey string) (string, error)` | 按文本点分路径在源文本中重命名键。 |
+| `RenameKeySegments(src string, segments []string, newKey string) (string, error)` | 同上，但接受已解码的字面量段（不做额外反转义）。 |
 
