@@ -12,3 +12,6 @@
 //! upstream by the `ktav` crate. Nothing else belongs here.
 
 ktav::declare_cabi!();
+
+// Статический license resource; не передаётся в ktav_free.
+include!(concat!(env!("OUT_DIR"), "/native_notices.rs"));

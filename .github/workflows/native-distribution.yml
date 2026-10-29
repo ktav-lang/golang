@@ -1,0 +1,274 @@
+name: Verified native distribution
+
+on:
+  workflow_call:
+    inputs:
+      source-ref:
+        description: Exact source commit to build
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build-native:
+    name: native / ${{ matrix.settings.asset }}
+    runs-on: ${{ matrix.settings.os }}
+    env:
+      SOURCE_REF: ${{ inputs.source-ref }}
+    strategy:
+      fail-fast: false
+      matrix:
+        settings:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            asset: libktav_cabi-linux-amd64.so
+            artifact: libktav_cabi.so
+            use-zigbuild: true
+
+          - os: ubuntu-latest
+            target: aarch64-unknown-linux-gnu
+            asset: libktav_cabi-linux-arm64.so
+            artifact: libktav_cabi.so
+            use-zigbuild: true
+
+          - os: macos-15
+            target: x86_64-apple-darwin
+            asset: libktav_cabi-darwin-amd64.dylib
+            artifact: libktav_cabi.dylib
+            use-zigbuild: false
+
+          - os: macos-15
+            target: aarch64-apple-darwin
+            asset: libktav_cabi-darwin-arm64.dylib
+            artifact: libktav_cabi.dylib
+            use-zigbuild: false
+
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            asset: ktav_cabi-windows-amd64.dll
+            artifact: ktav_cabi.dll
+            use-zigbuild: false
+
+          - os: windows-latest
+            target: aarch64-pc-windows-msvc
+            asset: ktav_cabi-windows-arm64.dll
+            artifact: ktav_cabi.dll
+            use-zigbuild: false
+
+    steps:
+      - uses: actions/checkout@v4
+      - name: Preserve notice tooling and metadata hook
+        shell: python
+        run: |
+          import os
+          import re
+          import shutil
+          from pathlib import Path
+          if not re.fullmatch(r'[0-9a-f]{40}', os.environ['SOURCE_REF']):
+              raise SystemExit('source-ref must be an exact commit SHA')
+          stage = Path(os.environ['RUNNER_TEMP']) / 'native-notice-tools'
+          stage.mkdir()
+          files = [
+              'crates/cabi/build.rs', 'scripts/prepare_cabi_notices.py',
+              'scripts/check_embedded_notices.py', 'scripts/cargo_notice_bundle.py',
+              'scripts/collect_cargo_notices.py', 'ci/about.toml',
+              'ci/test_embedded_notices.py',
+          ]
+          for name in files:
+              target = stage / name
+              target.parent.mkdir(parents=True, exist_ok=True)
+              shutil.copy2(name, target)
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source-ref }}
+          submodules: recursive
+          persist-credentials: false
+      - name: Apply metadata-only packaging hook
+        shell: python
+        run: |
+          import hashlib
+          import json
+          import os
+          import shutil
+          import subprocess
+          from pathlib import Path
+          revision = subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip()
+          if revision != os.environ['SOURCE_REF']:
+              raise SystemExit('unexpected native source revision')
+          stage = Path(os.environ['RUNNER_TEMP']) / 'native-notice-tools'
+          for path in stage.rglob('*'):
+              if not path.is_file():
+                  continue
+              target = Path(path.relative_to(stage))
+              if target.as_posix() == 'crates/cabi/build.rs' and target.exists() and target.read_bytes() != path.read_bytes():
+                  raise SystemExit('existing C ABI build hook requires review')
+              target.parent.mkdir(parents=True, exist_ok=True)
+              shutil.copy2(path, target)
+          protected = ['Cargo.toml', 'crates/cabi/Cargo.toml', 'go.mod', 'go.sum', 'internal', 'pure', 'root-docs']
+          subprocess.run(['git', 'diff', '--exit-code', '--', *protected], check=True)
+          source = Path('crates/cabi/src/lib.rs')
+          original = source.read_bytes()
+          hook = b'include!(concat!(env!("OUT_DIR"), "/native_notices.rs"));'
+          if hook not in original:
+              source.write_bytes(original + bytes([10, 10]) + hook + bytes([10]))
+          elif original.count(hook) != 1:
+              raise SystemExit('duplicate native notice include')
+          provenance = {
+              'source_ref': revision,
+              'tooling_ref': os.environ['GITHUB_SHA'],
+              'original_cabi_source_sha256': hashlib.sha256(original).hexdigest(),
+              'packaged_cabi_source_sha256': hashlib.sha256(source.read_bytes()).hexdigest(),
+          }
+          record = Path(os.environ['RUNNER_TEMP']) / 'native-source-provenance.json'
+          with record.open('x', encoding='utf-8') as output:
+              json.dump(provenance, output, sort_keys=True, indent=2)
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: dtolnay/rust-toolchain@1.99.1
+        with:
+          targets: ${{ matrix.settings.target }}
+          components: rust-docs
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.settings.target }}
+
+      - name: Install zig
+        if: matrix.settings.use-zigbuild
+        uses: mlugg/setup-zig@v2
+        with:
+          version: 0.14.0
+      - name: Install cargo-zigbuild
+        if: matrix.settings.use-zigbuild
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-zigbuild
+
+      - name: Verify published Rust core provenance
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo generate-lockfile
+          cargo update -p ktav --precise 0.8.1
+          python3 - <<'PY'
+          import tomllib
+          with open('Cargo.lock', 'rb') as source:
+              packages = tomllib.load(source)['package']
+          core = [package for package in packages if package['name'] == 'ktav']
+          if len(core) != 1:
+              raise SystemExit('expected exactly one ktav core')
+          expected = {
+              'version': '0.8.1',
+              'source': 'registry+https://github.com/rust-lang/crates.io-index',
+              'checksum': '7140dfe2fa6c320e74768cd6a637828c2d26f81746254f4fcd805f3993bd3fd5',
+          }
+          for field, value in expected.items():
+              if core[0].get(field) != value:
+                  raise SystemExit(f'ktav {field} mismatch: {core[0].get(field)!r}')
+          print('published ktav 0.8.1 core provenance verified')
+          PY
+
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-about@0.9.3
+      - name: Prepare locked native notice resource
+        shell: python
+        run: |
+          import os
+          import shutil
+          import subprocess
+          import sys
+          from pathlib import Path
+          evidence = Path(os.environ['RUNNER_TEMP']) / 'native-notices'
+          subprocess.run([sys.executable, 'scripts/prepare_cabi_notices.py', str(evidence)], check=True)
+          shutil.copy2(Path(os.environ['RUNNER_TEMP']) / 'native-source-provenance.json', evidence / 'source-provenance.json')
+          with Path(os.environ['GITHUB_ENV']).open('a', encoding='utf-8') as output:
+              output.write(f'KTAV_NATIVE_NOTICES={(evidence / "NOTICE.json.gz").as_posix()}\n')
+      - name: Verify notice resource guards
+        run: python -m unittest discover -s ci -p test_embedded_notices.py -v
+      - name: Build (zigbuild)
+        if: matrix.settings.use-zigbuild
+        shell: bash
+        run: |
+          set -euo pipefail
+          zig version > "$RUNNER_TEMP/native-notices/zig-version.txt"
+          sha256sum "$(command -v cargo-zigbuild)" > "$RUNNER_TEMP/native-notices/cargo-zigbuild.sha256"
+          RUSTFLAGS="${RUSTFLAGS:+$RUSTFLAGS }-C link-arg=-Wl,-Map=$RUNNER_TEMP/native-notices/native-link.map" \
+            cargo zigbuild --locked --release -p ktav-cabi --target ${{ matrix.settings.target }}.2.17
+          test -s "$RUNNER_TEMP/native-notices/native-link.map"
+
+      - name: Build (native)
+        if: ${{ !matrix.settings.use-zigbuild }}
+        run: cargo build --locked --release -p ktav-cabi --target ${{ matrix.settings.target }}
+
+      - name: Rename artifact
+        shell: bash
+        run: |
+          src="target/${{ matrix.settings.target }}/release/${{ matrix.settings.artifact }}"
+          ls -la "$src"
+          cp "$src" "${{ matrix.settings.asset }}"
+
+      - name: Verify embedded resource and write distribution sidecars
+        shell: python
+        env:
+          NATIVE_ASSET: ${{ matrix.settings.asset }}
+        run: |
+          import os
+          import shutil
+          import subprocess
+          import sys
+          from pathlib import Path
+          evidence = Path(os.environ['RUNNER_TEMP']) / 'native-notices'
+          asset = Path(os.environ['NATIVE_ASSET'])
+          if Path('Cargo.lock').read_bytes() != (evidence / 'Cargo.lock').read_bytes():
+              raise SystemExit('Cargo.lock changed after notice preparation')
+          report = subprocess.check_output([sys.executable, 'scripts/check_embedded_notices.py', str(asset), str(evidence / 'NOTICE.json')])
+          Path(str(asset) + '.NOTICE.manifest.json').write_bytes(report)
+          shutil.copy2(evidence / 'NOTICE.json', str(asset) + '.NOTICE.json')
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+      - name: Run Go tests on matching target architecture
+        shell: python
+        env:
+          NATIVE_ASSET: ${{ matrix.settings.asset }}
+          NATIVE_TARGET: ${{ matrix.settings.target }}
+          NATIVE_FILENAME: ${{ matrix.settings.artifact }}
+        run: |
+          import os
+          import platform
+          import shutil
+          import subprocess
+          import sys
+          from pathlib import Path
+          host = {'amd64': 'x86_64', 'x86_64': 'x86_64', 'arm64': 'aarch64', 'aarch64': 'aarch64'}.get(platform.machine().lower())
+          target = 'aarch64' if os.environ['NATIVE_TARGET'].startswith('aarch64-') else 'x86_64'
+          if host != target:
+              print('Cross-target resource verified; Go execution requires matching architecture')
+          else:
+              asset = Path(os.environ['NATIVE_ASSET']).resolve()
+              default = Path('target/release') / os.environ['NATIVE_FILENAME']
+              default.parent.mkdir(parents=True, exist_ok=True)
+              shutil.copy2(asset, default)
+              env = {**os.environ, 'KTAV_LIB_PATH': str(asset)}
+              subprocess.run(['go', 'test', '-count=1', '-v', './...'], env=env, check=True)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: native-distribution-${{ matrix.settings.target }}
+          path: |
+            ${{ matrix.settings.asset }}
+            ${{ matrix.settings.asset }}.NOTICE.json
+            ${{ matrix.settings.asset }}.NOTICE.manifest.json
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: native-license-evidence-${{ matrix.settings.target }}
+          path: ${{ runner.temp }}/native-notices/
+          if-no-files-found: warn
+
