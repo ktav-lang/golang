@@ -77,7 +77,8 @@ jobs:
               'crates/cabi/build.rs', 'scripts/prepare_cabi_notices.py',
               'scripts/check_embedded_notices.py', 'scripts/cargo_notice_bundle.py',
               'scripts/collect_cargo_notices.py', 'ci/about.toml',
-              'ci/test_embedded_notices.py',
+              'ci/test_embedded_notices.py', 'ci/test_zig_link_capture.py',
+              'scripts/capture-zig-link.sh',
           ]
           for name in files:
               target = stage / name
@@ -198,7 +199,13 @@ jobs:
           set -euo pipefail
           zig version > "$RUNNER_TEMP/native-notices/zig-version.txt"
           sha256sum "$(command -v cargo-zigbuild)" > "$RUNNER_TEMP/native-notices/cargo-zigbuild.sha256"
-          RUSTFLAGS="${RUSTFLAGS:+$RUSTFLAGS }-C link-arg=-Wl,-Map=$RUNNER_TEMP/native-notices/native-link.map" \
+          python -m unittest discover -s ci -p test_zig_link_capture.py -v
+          export KTAV_REAL_ZIG="$(command -v zig)"
+          export KTAV_LINK_MAP="$RUNNER_TEMP/native-notices/native-link.map"
+          export CARGO_ZIGBUILD_ZIG_COMMAND="$PWD/scripts/capture-zig-link.sh"
+          unset CARGO_ZIGBUILD_ZIG_COMMAND_ARGS
+          chmod +x "$CARGO_ZIGBUILD_ZIG_COMMAND"
+          RUSTFLAGS="${RUSTFLAGS:+$RUSTFLAGS }-C link-arg=-Wl,--print-map" \
             cargo zigbuild --locked --release -p ktav-cabi --target ${{ matrix.settings.target }}.2.17
           test -s "$RUNNER_TEMP/native-notices/native-link.map"
 
