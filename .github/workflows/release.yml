@@ -17,131 +17,16 @@ jobs:
   # Cross-compile the cdylib for six platforms. Each job uploads a
   # single asset named the way `internal/native.assetName` expects.
   # ------------------------------------------------------------------
-  build:
-    name: ${{ matrix.settings.asset }}
-    runs-on: ${{ matrix.settings.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        settings:
-          - os: ubuntu-latest
-            target: x86_64-unknown-linux-gnu
-            asset: libktav_cabi-linux-amd64.so
-            artifact: libktav_cabi.so
-            use-zigbuild: true
-
-          - os: ubuntu-latest
-            target: aarch64-unknown-linux-gnu
-            asset: libktav_cabi-linux-arm64.so
-            artifact: libktav_cabi.so
-            use-zigbuild: true
-
-          - os: macos-15
-            target: x86_64-apple-darwin
-            asset: libktav_cabi-darwin-amd64.dylib
-            artifact: libktav_cabi.dylib
-            use-zigbuild: false
-
-          - os: macos-15
-            target: aarch64-apple-darwin
-            asset: libktav_cabi-darwin-arm64.dylib
-            artifact: libktav_cabi.dylib
-            use-zigbuild: false
-
-          - os: windows-latest
-            target: x86_64-pc-windows-msvc
-            asset: ktav_cabi-windows-amd64.dll
-            artifact: ktav_cabi.dll
-            use-zigbuild: false
-
-          - os: windows-latest
-            target: aarch64-pc-windows-msvc
-            asset: ktav_cabi-windows-arm64.dll
-            artifact: ktav_cabi.dll
-            use-zigbuild: false
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: ${{ matrix.settings.target }}
-      - uses: Swatinem/rust-cache@v2
-        with:
-          key: ${{ matrix.settings.target }}
-
-      # zig + cargo-zigbuild for Linux targets — lets us pin the
-      # minimum glibc (see `--target` below) and cross-compile arm64
-      # from x64 without apt-installing a separate gcc.
-      - name: Install zig
-        if: matrix.settings.use-zigbuild
-        uses: mlugg/setup-zig@v2
-        with:
-          version: 0.14.0
-      - name: Install cargo-zigbuild
-        if: matrix.settings.use-zigbuild
-        uses: taiki-e/install-action@v2
-        with:
-          tool: cargo-zigbuild
-
-      - name: Verify published Rust core provenance
-        shell: bash
-        run: |
-          set -euo pipefail
-          cargo generate-lockfile
-          cargo update -p ktav --precise 0.8.1
-          python3 - <<'PY'
-          import tomllib
-          with open('Cargo.lock', 'rb') as source:
-              packages = tomllib.load(source)['package']
-          core = [package for package in packages if package['name'] == 'ktav']
-          if len(core) != 1:
-              raise SystemExit('expected exactly one ktav core')
-          expected = {
-              'version': '0.8.1',
-              'source': 'registry+https://github.com/rust-lang/crates.io-index',
-              'checksum': '7140dfe2fa6c320e74768cd6a637828c2d26f81746254f4fcd805f3993bd3fd5',
-          }
-          for field, value in expected.items():
-              if core[0].get(field) != value:
-                  raise SystemExit(f'ktav {field} mismatch: {core[0].get(field)!r}')
-          print('published ktav 0.8.1 core provenance verified')
-          PY
-
-      - name: Build (zigbuild)
-        if: matrix.settings.use-zigbuild
-        run: cargo zigbuild --locked --release -p ktav-cabi --target ${{ matrix.settings.target }}.2.17
-
-      - name: Build (native)
-        if: ${{ !matrix.settings.use-zigbuild }}
-        run: cargo build --locked --release -p ktav-cabi --target ${{ matrix.settings.target }}
-
-      - name: Rename artifact (Unix)
-        if: runner.os != 'Windows'
-        shell: bash
-        run: |
-          src="target/${{ matrix.settings.target }}/release/${{ matrix.settings.artifact }}"
-          ls -la "$src"
-          cp "$src" "${{ matrix.settings.asset }}"
-      - name: Rename artifact (Windows)
-        if: runner.os == 'Windows'
-        shell: bash
-        run: |
-          src="target/${{ matrix.settings.target }}/release/${{ matrix.settings.artifact }}"
-          ls -la "$src"
-          cp "$src" "${{ matrix.settings.asset }}"
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: ${{ matrix.settings.asset }}
-          path: ${{ matrix.settings.asset }}
-          if-no-files-found: error
+  build-native:
+    uses: ./.github/workflows/native-distribution.yml
+    with:
+      source-ref: ${{ github.sha }}
 
   # ------------------------------------------------------------------
   # Attach the six artifacts to the GitHub Release matching the tag.
   # ------------------------------------------------------------------
   release:
-    needs: build
+    needs: build-native
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/v')
     permissions:
@@ -151,6 +36,7 @@ jobs:
 
       - uses: actions/download-artifact@v4
         with:
+          pattern: native-distribution-*
           path: artifacts
           merge-multiple: true
 

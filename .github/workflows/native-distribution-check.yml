@@ -1,0 +1,13 @@
+name: Native distribution check
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  native-distribution:
+    uses: ./.github/workflows/native-distribution.yml
+    with:
+      source-ref: dd7a14cc1c88199b5515f5c891100dd72ef211fd

@@ -1,0 +1,53 @@
+name: License checks
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  cargo-licenses:
+    name: Cargo dependency licenses
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate native distribution and publication gates
+        run: ruby ci/check_native_distribution.rb
+      - uses: EmbarkStudios/cargo-deny-action@b66acf5e9fe20f8aba065be86778a8a4c846f902
+        with:
+          command: check licenses
+
+  npm-licenses:
+    name: npm dependency licenses
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - run: node --test tests/npm-license-policy.test.mjs
+      - run: node scripts/check-npm-licenses.mjs
+
+  go-licenses:
+    name: Go dependency licenses (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+      - name: Install go-licenses
+        run: go install github.com/google/go-licenses/v2@v2.0.1
+      - name: Check Go dependencies, including tests
+        shell: bash
+        run: |
+          bin="$(go env GOPATH)/bin/go-licenses"
+          if [[ "$RUNNER_OS" == Windows ]]; then bin="$(cygpath -u "$bin")"; fi
+          "$bin" check --include_tests --allowed_licenses=Apache-2.0,BSD-2-Clause,BSD-3-Clause,ISC,MIT ./...
