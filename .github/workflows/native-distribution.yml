@@ -78,7 +78,8 @@ jobs:
               'scripts/check_embedded_notices.py', 'scripts/cargo_notice_bundle.py',
               'scripts/collect_cargo_notices.py', 'ci/about.toml',
               'ci/test_embedded_notices.py', 'ci/test_zig_link_capture.py',
-              'scripts/capture-zig-link.sh',
+              'scripts/capture-zig-link.sh', 'scripts/zig_runtime_notices.py',
+              'ci/zig-runtime-catalog.json', 'ci/test_zig_runtime_notices.py',
           ]
           for name in files:
               target = stage / name
@@ -192,6 +193,13 @@ jobs:
               output.write(f'KTAV_NATIVE_NOTICES={(evidence / "NOTICE.json.gz").as_posix()}\n')
       - name: Verify notice resource guards
         run: python -m unittest discover -s ci -p test_embedded_notices.py -v
+      - name: Include verified Zig runtime notices
+        if: matrix.settings.use-zigbuild
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m unittest discover -s ci -p test_zig_runtime_notices.py -v
+          python scripts/zig_runtime_notices.py prepare "$RUNNER_TEMP/native-notices"
       - name: Build (zigbuild)
         if: matrix.settings.use-zigbuild
         shell: bash
@@ -208,6 +216,7 @@ jobs:
           RUSTFLAGS="${RUSTFLAGS:+$RUSTFLAGS }-C link-arg=-Wl,--print-map" \
             cargo zigbuild --locked --release -p ktav-cabi --target ${{ matrix.settings.target }}.2.17
           test -s "$RUNNER_TEMP/native-notices/native-link.map"
+          python scripts/zig_runtime_notices.py verify "$RUNNER_TEMP/native-notices"
 
       - name: Build (native)
         if: ${{ !matrix.settings.use-zigbuild }}
