@@ -10,6 +10,7 @@ import sys
 from pathlib import Path
 
 from cargo_notice_bundle import _build
+from rust_compiler_notices import collect as compiler_notices
 
 
 def _prepare(evidence: Path) -> None:
@@ -70,9 +71,11 @@ def _prepare(evidence: Path) -> None:
         ]
     )
     (evidence / "licenses.json").write_bytes(licenses)
-    data = _build(evidence)
+    bundle = json.loads(_build(evidence))
+    bundle["rust_compiler_builtins"] = compiler_notices(root, bundle["rustc"])
+    data = (json.dumps(bundle, ensure_ascii=False, sort_keys=True, indent=2) + "\n").encode("utf-8")
     compressed = gzip.compress(data, mtime=0)
-    if len(compressed) > 4 * 1024 * 1024:
+    if len(data) > 64 * 1024 * 1024 or len(compressed) > 4 * 1024 * 1024:
         raise ValueError("compressed native notices exceed the resource size limit")
     if lock.read_bytes() != original:
         raise ValueError("Cargo.lock changed during notice preparation")

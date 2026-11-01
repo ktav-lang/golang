@@ -74,6 +74,7 @@ jobs:
           stage = Path(os.environ['RUNNER_TEMP']) / 'native-notice-tools'
           stage.mkdir()
           files = [
+              'scripts/rust_compiler_notices.py', 'ci/rust-compiler-notices.json', 'ci/test_rust_compiler_notices.py', 'ci/licenses/rust-compiler-originals/compiler-builtins-LICENSE.txt', 'ci/licenses/rust-compiler-originals/compiler-builtins-Cargo.toml.txt', 'ci/licenses/rust-compiler-originals/compiler-builtins-build.rs.txt', 'ci/licenses/rust-compiler-originals/compiler-builtins-aarch64.rs.txt', 'ci/licenses/rust-compiler-originals/compiler-builtins-aarch64-outline-atomics.rs.txt', 'ci/licenses/rust-compiler-originals/compiler-rt-aarch64-lse.S.txt', 'ci/licenses/rust-compiler-originals/compiler-rt-aarch64-cpu-model.c.txt', 'ci/licenses/rust-compiler-originals/compiler-rt-LICENSE.TXT', 'ci/licenses/rust-compiler-originals/compiler-rt-CREDITS.TXT', 'ci/licenses/rust-compiler-originals/compiler-builtins-math-mod.rs.txt', 'ci/licenses/rust-compiler-originals/libm-trunc.rs.txt', 'ci/licenses/rust-compiler-originals/libm-LICENSE.txt', 'ci/licenses/rust-compiler-originals/libm-generic-trunc.rs.txt', 'ci/licenses/rust-compiler-originals/compiler-builtins-float-conv.rs.txt',
               'crates/cabi/build.rs', 'scripts/prepare_cabi_notices.py',
               'scripts/check_embedded_notices.py', 'scripts/cargo_notice_bundle.py',
               'scripts/collect_cargo_notices.py', 'ci/about.toml',
@@ -192,7 +193,9 @@ jobs:
           with Path(os.environ['GITHUB_ENV']).open('a', encoding='utf-8') as output:
               output.write(f'KTAV_NATIVE_NOTICES={(evidence / "NOTICE.json.gz").as_posix()}\n')
       - name: Verify notice resource guards
-        run: python -m unittest discover -s ci -p test_embedded_notices.py -v
+        run: |
+          python -m unittest discover -s ci -p test_embedded_notices.py -v
+          python -I -m unittest discover -s ci -p test_rust_compiler_notices.py -v
       - name: Include verified Zig runtime notices
         if: matrix.settings.use-zigbuild
         shell: bash
