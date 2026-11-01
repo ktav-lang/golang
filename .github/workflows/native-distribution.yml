@@ -15,6 +15,11 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  windows-gnu:
+    uses: ./.github/workflows/windows-gnu-cabi-candidate.yml
+    with:
+      source-ref: ${{ inputs.source-ref }}
+
   build-native:
     name: native / ${{ matrix.settings.asset }}
     runs-on: ${{ matrix.settings.os }}
@@ -48,17 +53,6 @@ jobs:
             artifact: libktav_cabi.dylib
             use-zigbuild: false
 
-          - os: windows-latest
-            target: x86_64-pc-windows-msvc
-            asset: ktav_cabi-windows-amd64.dll
-            artifact: ktav_cabi.dll
-            use-zigbuild: false
-
-          - os: windows-latest
-            target: aarch64-pc-windows-msvc
-            asset: ktav_cabi-windows-arm64.dll
-            artifact: ktav_cabi.dll
-            use-zigbuild: false
 
     steps:
       - uses: actions/checkout@v4

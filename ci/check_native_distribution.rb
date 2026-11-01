@@ -6,8 +6,35 @@ triggers = workflow['on'] || workflow[true]
 abort 'missing native workflow contract' unless triggers.fetch('workflow_call').fetch('inputs').fetch('source-ref').fetch('required')
 job = workflow.fetch('jobs').fetch('build-native')
 settings = job.fetch('strategy').fetch('matrix').fetch('settings')
-expected = %w[x86_64-unknown-linux-gnu aarch64-unknown-linux-gnu x86_64-apple-darwin aarch64-apple-darwin x86_64-pc-windows-msvc aarch64-pc-windows-msvc]
-abort 'incomplete native target matrix' unless settings.map { |item| item.fetch('target') }.sort == expected.sort
+expected = %w[x86_64-unknown-linux-gnu aarch64-unknown-linux-gnu x86_64-apple-darwin aarch64-apple-darwin x86_64-pc-windows-gnullvm aarch64-pc-windows-gnullvm]
+gnu_path = './.github/workflows/windows-gnu-cabi-candidate.yml'
+gnu_call = workflow.fetch('jobs').fetch('windows-gnu')
+abort 'wrong GNU producer caller' unless gnu_call.fetch('uses') == gnu_path
+abort 'GNU source is not forwarded' unless gnu_call.fetch('with').fetch('source-ref') == '${{ inputs.source-ref }}'
+gnu = YAML.load_file(gnu_path)
+gnu_triggers = gnu['on'] || gnu[true]
+abort 'missing GNU source contract' unless gnu_triggers.fetch('workflow_call').fetch('inputs').fetch('source-ref').fetch('required')
+abort 'duplicate GNU PR producer' if gnu_triggers.key?('pull_request')
+gnu_jobs = gnu.fetch('jobs')
+gnu_targets = gnu_jobs.fetch('cabi-gnullvm').fetch('strategy').fetch('matrix').fetch('include').map { |item| item.fetch('target') }
+abort 'wrong GNU target matrix' unless gnu_targets.sort == %w[x86_64-pc-windows-gnullvm aarch64-pc-windows-gnullvm].sort
+abort 'incomplete combined native target matrix' unless (settings.map { |item| item.fetch('target') } + gnu_targets).sort == expected.sort
+consumers = gnu_jobs.fetch('go-consumers')
+abort 'missing GNU producer dependency' unless consumers.fetch('needs') == 'cabi-gnullvm'
+actual = consumers.fetch('strategy').fetch('matrix').fetch('include').map { |item| [item.fetch('os'), item.fetch('arch'), item.fetch('go-arch'), item.fetch('target')] }
+required = [['windows-latest', 'x64', 'amd64', 'x86_64-pc-windows-gnullvm'], ['windows-11-arm', 'arm64', 'arm64', 'aarch64-pc-windows-gnullvm']]
+abort 'incomplete genuine Go consumer matrix' unless actual.sort == required.sort
+staging = gnu_jobs.fetch('stage-release')
+abort 'missing complete GNU consumer gate' unless staging.fetch('needs').sort == %w[cabi-gnullvm go-consumers].sort
+abort 'incomplete GNU distribution target matrix' unless staging.fetch('strategy').fetch('matrix').fetch('target').sort == gnu_targets.sort
+steps = staging.fetch('steps')
+abort 'missing GNU staging command' unless steps.any? { |item| item['run'].to_s.include?('python -I scripts/stage_go_gnu_release.py') }
+outputs = steps.select { |item| item['uses'].to_s.start_with?('actions/upload-artifact@') }
+abort 'wrong GNU distribution artifact role' unless outputs.length == 1 && outputs[0].fetch('with').fetch('name') == 'native-distribution-${{ matrix.target }}' && !outputs[0].key?('if')
+stager = File.read('scripts/stage_go_gnu_release.py')
+%w[ktav_cabi-windows-amd64.dll ktav_cabi-windows-arm64.dll .NOTICE.json .NOTICE.manifest.json check_embedded_notices.py source_ref target].each do |role|
+  abort "missing GNU delivery role #{role}" unless stager.include?(role)
+end
 abort 'incompatible Go macOS runner' unless settings.select { |item| item.fetch('target').include?('apple') }.all? { |item| item.fetch('os') == 'macos-15' }
 caller = YAML.load_file('.github/workflows/native-distribution-check.yml').fetch('jobs').fetch('native-distribution')
 abort 'wrong native CI caller' unless caller.fetch('uses') == path

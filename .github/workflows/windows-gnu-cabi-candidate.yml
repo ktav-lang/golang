@@ -1,14 +1,19 @@
 name: Go Windows GNU LLVM candidate evidence
 
 on:
-  pull_request:
+  workflow_call:
+    inputs:
+      source-ref:
+        description: Exact reviewed original Go 0.8.1 source
+        required: true
+        type: string
   workflow_dispatch:
 
 permissions:
   contents: read
 
 env:
-  SOURCE_REF: dd7a14cc1c88199b5515f5c891100dd72ef211fd
+  SOURCE_REF: ${{ inputs.source-ref || 'dd7a14cc1c88199b5515f5c891100dd72ef211fd' }}
 
 jobs:
   cabi-gnullvm:
@@ -431,3 +436,77 @@ jobs:
             ${{ runner.temp }}/go-gnu-delivered/consumer-stdout.jsonl
             ${{ runner.temp }}/go-gnu-delivered/consumer-stderr.txt
           if-no-files-found: warn
+
+  stage-release:
+    name: Stage GNU release role / ${{ matrix.target }}
+    needs: [cabi-gnullvm, go-consumers]
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [x86_64-pc-windows-gnullvm, aarch64-pc-windows-gnullvm]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/download-artifact@v4
+        with:
+          name: go-cabi-gnu-candidate-${{ matrix.target }}
+          path: ${{ runner.temp }}/go-gnu-delivered
+      - name: Stage exact verified DLL and full notice sidecars
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -I scripts/stage_go_gnu_release.py "$RUNNER_TEMP/go-gnu-delivered" "$RUNNER_TEMP/go-gnu-release" '${{ matrix.target }}'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: native-distribution-${{ matrix.target }}
+          path: ${{ runner.temp }}/go-gnu-release/
+          if-no-files-found: error
+
+
+  docs-proposal:
+    name: Generate Windows GNU runtime documentation proposal
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - name: Generate and check the reviewed EN RU ZH runtime unit
+        shell: python
+        run: |
+          import hashlib
+          import json
+          import os
+          import shutil
+          import subprocess
+          from pathlib import Path
+          unit = Path('root-docs/README/runtime-support/body-1.md')
+          proposed = Path('ci/fixtures/go-runtime-support.md.txt')
+          shutil.copyfile(proposed, unit)
+          subprocess.run(['node', 'scripts/build-docs.mjs'], check=True)
+          subprocess.run(['node', 'scripts/build-docs.mjs', '--check'], check=True)
+          changed = set(subprocess.check_output(['git', 'diff', '--name-only'], text=True).splitlines())
+          names = ['README.md', 'docs/README.ru.md', 'docs/README.zh.md']
+          if changed != {str(unit), *names}:
+              raise SystemExit('documentation proposal changed unrelated files')
+          output = Path(os.environ['RUNNER_TEMP']) / 'go-gnu-doc-proposal'
+          output.mkdir()
+          rows = []
+          for name in names:
+              raw = Path(name).read_bytes()
+              destination = output / name
+              destination.parent.mkdir(parents=True, exist_ok=True)
+              destination.write_bytes(raw)
+              rows.append({'path': name, 'sha256': hashlib.sha256(raw).hexdigest()})
+          record = {'tooling_ref': os.environ['GITHUB_SHA'], 'source_unit_sha256': hashlib.sha256(unit.read_bytes()).hexdigest(), 'files': rows}
+          (output / 'source-provenance.json').write_text(json.dumps(record, indent=2) + '\n', encoding='utf-8')
+      - uses: actions/upload-artifact@v4
+        with:
+          name: go-gnu-doc-proposal
+          path: ${{ runner.temp }}/go-gnu-doc-proposal/
+          if-no-files-found: error

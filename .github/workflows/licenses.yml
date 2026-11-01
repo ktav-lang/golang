@@ -15,7 +15,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Validate native distribution and publication gates
-        run: ruby ci/check_native_distribution.rb
+        run: |
+          ruby ci/check_native_distribution.rb
+          python -I -m unittest discover -s ci -p test_native_distribution_contract.py -v
       - uses: EmbarkStudios/cargo-deny-action@b66acf5e9fe20f8aba065be86778a8a4c846f902
         with:
           command: check licenses
