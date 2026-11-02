@@ -630,6 +630,17 @@ not `/pure` runtime dependencies.
 - Linux distros must use glibc 2.17+ (Rust's default target). Alpine
   (musl) support is planned.
 
+The prepared 0.8.1 Windows native distribution uses GNU/LLVM targets
+`x86_64-pc-windows-gnullvm` and `aarch64-pc-windows-gnullvm`.
+The existing `windows-amd64` and `windows-arm64` asset names remain
+compatibility identifiers, not MSVC compiler claims. These DLLs require
+neither Rust/LLVM build tools nor `VCRUNTIME140.dll` at runtime; they use
+Windows system APIs and the system UCRT. Go dependencies are unchanged; consumers need neither Rust nor cgo.
+Complete original compiler/runtime copyright and licence texts are embedded
+in the DLL and retained in the adjacent `.NOTICE.json`; distribute the
+notice and `.NOTICE.manifest.json` sidecars with the DLL. This describes
+the prepared candidate, not a repair of previously published binaries.
+
 ## License
 
 MIT OR Apache-2.0 — see [LICENSE-MIT](LICENSE-MIT) and
